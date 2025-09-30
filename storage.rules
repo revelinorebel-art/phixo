@@ -1,0 +1,49 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Images folder - users can only access their own images
+    match /images/{userId}/{imageId} {
+      // Allow read access to own images
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow write access to own images with validation
+      allow write: if request.auth != null 
+        && request.auth.uid == userId
+        && validateImageUpload();
+      
+      // Allow delete access to own images
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Generated images subfolder
+    match /images/{userId}/generated/{imageId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null 
+        && request.auth.uid == userId
+        && validateImageUpload();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Profile pictures (if needed in the future)
+    match /profiles/{userId}/{imageId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+        && request.auth.uid == userId
+        && validateProfileImage();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Helper functions for validation
+    function validateImageUpload() {
+      return request.resource.size < 10 * 1024 * 1024 && // Max 10MB
+             request.resource.contentType.matches('image/.*') && // Only images
+             request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    }
+    
+    function validateProfileImage() {
+      return request.resource.size < 5 * 1024 * 1024 && // Max 5MB for profile pics
+             request.resource.contentType.matches('image/.*') &&
+             request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+    }
+  }
+}

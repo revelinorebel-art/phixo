@@ -11,19 +11,20 @@ import {
   LogOut
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCredits } from '@/contexts/CreditsContext';
 import { Button } from '@/components/ui/button';
 import PhixoLogo from '@/components/ui/PhixoLogo';
 
-    const Sidebar = () => {
+const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, userProfile, logout } = useAuth();
-  const { credits } = useCredits();
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    const result = await logout();
+    if (result.success !== false) {
+      // Redirect naar landingspagina na succesvol uitloggen
+      navigate('/', { replace: true });
+    }
   };
 
       const navigationItems = [
@@ -62,7 +63,7 @@ import PhixoLogo from '@/components/ui/PhixoLogo';
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-white/70">Credits</span>
-                <span className="text-lg font-bold text-purple-400">{credits}</span>
+                <span className="text-lg font-bold text-purple-400">{userProfile?.credits || 0}</span>
               </div>
             </div>
           )}

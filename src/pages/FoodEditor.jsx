@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
-import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ReactCompareSlider, ReactCompareSliderImage } from 'react-compare-slider';
 import { 
   ChefHat, 
@@ -19,7 +19,9 @@ import {
   Wand2,
   ImageIcon,
   X,
-  Keyboard
+  Keyboard,
+  Cloud,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,9 +35,9 @@ import Sidebar from '@/components/Layout/Sidebar';
 import { BackgroundGradient } from '@/components/ui/background-gradient';
 import LoadingAnimation from '@/components/ui/loading-animation';
 import { useSeedream } from '@/hooks/useSeedream';
-import { useCredits } from '@/contexts/CreditsContext';
 import { getCategoryPromptSuggestions, getAspectRatioOptions } from '@/lib/seedream';
 import ResolutionSelector from '@/components/ui/ResolutionSelector';
+import { uploadEditedPhoto } from '@/services/storageService';
 
 const FoodEditor = () => {
   const navigate = useNavigate();
@@ -51,14 +53,18 @@ const FoodEditor = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isCleared, setIsCleared] = useState(false);
+  
+  // Firebase Storage state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedToStorage, setUploadedToStorage] = useState(false);
 
   const { 
     generatedImage, 
     isLoading, 
-    callSeedreamApi 
+    callSeedreamApi,
+    credits
   } = useSeedream();
-
-  const { credits, checkCredits } = useCredits();
 
   // Load photo data from localStorage
   useEffect(() => {
@@ -92,6 +98,15 @@ const FoodEditor = () => {
       }
     }
   }, [photoId, navigate]);
+
+  // Watch for generatedImage changes to auto-upload to Firebase Storage
+  useEffect(() => {
+    if (generatedImage && !isUploading && !uploadedToStorage) {
+      uploadEditedPhotoToStorage(generatedImage).catch(error => {
+        console.error('Auto-upload to Firebase failed:', error);
+      });
+    }
+  }, [generatedImage, isUploading, uploadedToStorage]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -159,6 +174,53 @@ const FoodEditor = () => {
     });
   };
 
+  // Upload edited photo to Firebase Storage
+  const uploadEditedPhotoToStorage = async (imageUrl) => {
+    try {
+      setIsUploading(true);
+      setUploadProgress(0);
+      setUploadedToStorage(false);
+
+      // Convert URL to blob
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+
+      // Create metadata
+      const metadata = {
+        category: 'foodfoto',
+        prompt: prompt,
+        aspectRatio: aspectRatio,
+        resolution: resolution,
+        originalFileName: uploadedImage?.name || 'unknown',
+        editedAt: new Date().toISOString()
+      };
+
+      // Upload to Firebase Storage
+      const result = await uploadEditedPhoto(blob, metadata, (progress) => {
+        setUploadProgress(progress);
+      });
+
+      setUploadedToStorage(true);
+      
+      toast({
+        title: "Opgeslagen in Firebase! 🔥",
+        description: `Foto opgeslagen als: ${result.fileName}`,
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Upload to Firebase Storage failed:', error);
+      toast({
+        title: "Upload fout",
+        description: "Kon foto niet opslaan in Firebase Storage.",
+        variant: "destructive"
+      });
+      throw error;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       toast({
@@ -178,7 +240,7 @@ const FoodEditor = () => {
       return;
     }
 
-    if (!checkCredits(1)) {
+    if (credits < 1) {
       toast({
         title: "Onvoldoende credits",
         description: "Je hebt meer credits nodig om deze functie te gebruiken.",
@@ -186,6 +248,9 @@ const FoodEditor = () => {
       });
       return;
     }
+
+    // Reset upload status for new generation
+    setUploadedToStorage(false);
 
     toast({
       title: "PHIXO AI is aan het werk... ✨",
@@ -347,7 +412,7 @@ const FoodEditor = () => {
                         <kbd className="px-2 py-1 bg-white/10 rounded text-sm">Ctrl + H</kbd>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-white/70">Nieuw project</span>
+                        <span className="text-white/70">Nieuwe foto</span>
                         <kbd className="px-2 py-1 bg-white/10 rounded text-sm">Ctrl + N</kbd>
                       </div>
                     </div>
@@ -356,137 +421,61 @@ const FoodEditor = () => {
               )}
             </AnimatePresence>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Preview Column */}
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="lg:col-span-2 order-1 lg:order-1 flex flex-col relative"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="gradient-text text-xl font-semibold">Preview</h3>
-                  {(filePreview || generatedImage) && (
-                    <Button 
-                      onClick={handleClear}
-                      variant="outline" 
-                      size="sm"
-                      className="border-red-500/50 text-red-400 hover:bg-red-500/10 hover:border-red-400"
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Nieuw project
-                    </Button>
-                  )}
-                </div>
-                
-                <BackgroundGradient containerClassName="flex flex-col rounded-2xl min-h-[75vh] w-fit mx-auto" className="bg-slate-900/80 rounded-2xl flex flex-col w-fit" animate={false}>
-                  <Card className="bg-transparent border-none flex flex-col h-full w-fit">
-                    <CardContent className="flex items-center justify-center relative p-0 min-h-[75vh] w-fit">
-                      {isCleared ? (
-                        <div className="flex flex-col items-center justify-center min-h-[75vh] min-w-[600px] border-2 border-dashed rounded-xl transition-colors border-white/30 hover:border-orange-400/50">
-                          <FileUp className="w-16 h-16 mb-4 text-white/50" />
-                          <h3 className="text-xl font-semibold text-white mb-2">
-                            Upload een nieuwe foodfoto
-                          </h3>
-                          <p className="text-white/70 text-center mb-4">
-                            Ga terug naar de uploader om een nieuwe foto te selecteren
-                          </p>
-                          <Button onClick={() => navigate('/food-uploader')} className="button-glow">
-                            <Upload className="w-4 h-4 mr-2" />
-                            Naar Uploader
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          <LoadingAnimation 
-                            isVisible={isLoading}
-                            message="Je foodfoto wordt getransformeerd ✨"
-                            className="z-20"
-                          />
-                          
-                          {filePreview && generatedImage && (
-                            <ReactCompareSlider
-                              itemOne={<ReactCompareSliderImage src={filePreview} alt="Originele foto" style={{objectFit: 'contain', width: '100%', height: '100%', maxHeight: '75vh'}} />}
-                              itemTwo={<ReactCompareSliderImage src={generatedImage} alt="AI getransformeerde foto" style={{objectFit: 'contain', width: '100%', height: '100%', maxHeight: '75vh'}} />}
-                              className="rounded-xl overflow-hidden"
-                              style={{
-                                display: 'flex',
-                                width: 'auto',
-                                height: '75vh',
-                                maxWidth: '90vw',
-                                aspectRatio: 'auto'
-                              }}
-                            />
-                          )}
-                          
-                          {filePreview && !generatedImage && (
-                            <div 
-                              style={{
-                                display: 'flex',
-                                width: 'auto',
-                                height: '75vh',
-                                maxWidth: '90vw',
-                                aspectRatio: 'auto',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                              className="rounded-xl overflow-hidden"
-                            >
-                              <img 
-                                src={filePreview} 
-                                alt="Geüploade foto" 
-                                style={{
-                                  objectFit: 'contain',
-                                  width: '100%',
-                                  height: '100%',
-                                  maxHeight: '75vh'
-                                }}
-                                className="rounded-xl"
-                              />
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                </BackgroundGradient>
-              </motion.div>
-
-              {/* Controls Column */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="order-2 lg:order-2 space-y-6"
-              >
-                {/* Prompt Section */}
+            <div className="grid lg:grid-cols-3 gap-8">
+              {/* Left Column - Controls */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* Prompt Input */}
                 <BackgroundGradient containerClassName="rounded-2xl" className="bg-slate-900/80 rounded-2xl" animate={false}>
                   <Card className="bg-transparent border-none">
                     <CardHeader>
-                      <CardTitle className="text-white text-xl flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg flex items-center justify-center">
-                          <ChefHat className="w-5 h-5 text-white" />
-                        </div>
-                        Beschrijving
+                      <CardTitle className="text-white text-lg flex items-center gap-2">
+                        <Wand2 className="w-5 h-5" />
+                        Transformatie Prompt
                       </CardTitle>
-                      <CardDescription>
+                      <CardDescription className="text-white/60">
                         Beschrijf hoe je je foodfoto wilt transformeren
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div>
                         <Textarea
-                          placeholder="Bijvoorbeeld: Maak deze pizza er professioneler uitzien met perfecte belichting en garnering..."
+                          placeholder="Bijvoorbeeld: Maak van deze pizza een gourmet gerecht met verse kruiden en een elegante presentatie..."
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
-                          className="min-h-[100px] bg-white/5 border-white/10 text-white placeholder:text-white/50 focus:border-orange-500/50"
+                          className="bg-white/5 border-white/10 text-white placeholder:text-white/40 min-h-[120px] resize-none"
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                              e.preventDefault();
+                              if (!isLoading && uploadedImage && prompt.trim()) {
+                                handleGenerate();
+                              }
+                            }
+                          }}
                         />
                       </div>
-                      
+
                       <div className="flex gap-2">
-                        <Button 
+                        <Button
+                          onClick={handleGenerate}
+                          disabled={isLoading || !uploadedImage || !prompt.trim()}
+                          className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white border-0"
+                        >
+                          {isLoading ? (
+                            <>
+                              <LoadingAnimation className="w-4 h-4 mr-2" />
+                              Transformeren...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Transformeer
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
                           onClick={handlePromptSuggestion}
-                          variant="outline" 
-                          size="sm"
-                          className="border-white/20 hover:bg-white/10 text-white/70 hover:text-white"
+                          className="border-white/20 hover:bg-white/10 text-white"
                         >
                           <Lightbulb className="w-4 h-4 mr-2" />
                           Suggesties
@@ -543,8 +532,8 @@ const FoodEditor = () => {
                         </Select>
                       </div>
 
-                      <ResolutionSelector 
-                        value={resolution} 
+                      <ResolutionSelector
+                        value={resolution}
                         onChange={setResolution}
                         aspectRatio={aspectRatio}
                         originalDimensions={originalImageDimensions}
@@ -552,39 +541,102 @@ const FoodEditor = () => {
                     </CardContent>
                   </Card>
                 </BackgroundGradient>
+              </div>
 
-                {/* Action Buttons */}
-                <div className="space-y-3">
-                  <Button 
-                    onClick={handleGenerate}
-                    disabled={!uploadedImage || !prompt.trim() || isLoading}
-                    className="w-full button-glow h-12 text-base"
-                  >
-                    {isLoading ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        <span>Genereren...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5" />
-                        Transformeer Foodfoto
-                      </div>
-                    )}
-                  </Button>
+              {/* Right Column - Preview */}
+              <div className="lg:col-span-2">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.3, duration: 0.6 }}
+                  className="space-y-6"
+                >
+                  {/* Image Preview */}
+                  <BackgroundGradient containerClassName="rounded-2xl" className="bg-slate-900/80 rounded-2xl" animate={false}>
+                    <Card className="bg-transparent border-none">
+                      <CardHeader>
+                        <CardTitle className="text-white text-lg flex items-center gap-2">
+                          <ImageIcon className="w-5 h-5" />
+                          Voorbeeld
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="relative">
+                          {filePreview && generatedImage ? (
+                            <div className="relative">
+                              <ReactCompareSlider
+                                itemOne={<ReactCompareSliderImage src={filePreview} alt="Originele foodfoto" />}
+                                itemTwo={<ReactCompareSliderImage src={generatedImage} alt="Getransformeerde foodfoto" />}
+                                className="rounded-xl overflow-hidden"
+                              />
+                              
+                              {/* Storage Upload Status */}
+                              {(isUploading || uploadedToStorage) && (
+                                <div className="absolute top-4 right-4 bg-black/80 backdrop-blur-sm rounded-lg p-3 flex items-center gap-2">
+                                  {isUploading ? (
+                                    <>
+                                      <Cloud className="w-4 h-4 text-blue-400 animate-pulse" />
+                                      <span className="text-white text-sm">Uploaden... {uploadProgress}%</span>
+                                    </>
+                                  ) : uploadedToStorage ? (
+                                    <>
+                                      <Check className="w-4 h-4 text-green-400" />
+                                      <span className="text-white text-sm">Opgeslagen ☁️</span>
+                                    </>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+                          ) : filePreview ? (
+                            <div className="relative">
+                              <img 
+                                src={filePreview} 
+                                alt="Geüploade foodfoto" 
+                                className="w-full h-auto rounded-xl"
+                              />
+                              <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center">
+                                <div className="text-center text-white">
+                                  <ChefHat className="w-12 h-12 mx-auto mb-4 opacity-80" />
+                                  <p className="text-lg font-medium">Klaar voor transformatie</p>
+                                  <p className="text-sm opacity-70">Voer een prompt in en klik op Transformeer</p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="aspect-video bg-white/5 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center">
+                              <div className="text-center text-white/60">
+                                <Upload className="w-12 h-12 mx-auto mb-4" />
+                                <p>Upload een foodfoto om te beginnen</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </BackgroundGradient>
 
-                  {generatedImage && (
-                    <Button 
-                      onClick={handleDownload}
+                  {/* Action Buttons */}
+                  <div className="flex gap-4">
+                    <Button
                       variant="outline"
-                      className="w-full border-white/20 hover:bg-white/10 text-white"
+                      onClick={handleClear}
+                      className="border-white/20 hover:bg-white/10 text-white"
                     >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download Resultaat
+                      <FileUp className="w-4 h-4 mr-2" />
+                      Nieuwe Foto
                     </Button>
-                  )}
-                </div>
-              </motion.div>
+                    {generatedImage && (
+                      <Button
+                        onClick={handleDownload}
+                        className="w-full border-white/20 hover:bg-white/10 text-white"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Download Resultaat
+                      </Button>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
             </div>
           </motion.div>
         </main>

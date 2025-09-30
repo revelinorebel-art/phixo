@@ -71,3 +71,33 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+
+# Test files (exclude from production)
+test-*.html
+test-*.js
+*-test.html
+*-test.js
+quick-route-test.html
+run-persistence-test.html
+run-route-test.html
+test-route-protection.html
+validate-storage.js
+test-auth.js
+test-firebase-storage.js
+test-registration-flow.js
+
+# Test images and SVGs
+test-photo*.svg
+public/test-photo*.svg
+
+# Firebase config files (keep rules but exclude sensitive configs)
+# Note: firestore.rules and storage.rules should be included
+# but any files with actual API keys should be excluded
+
+# Backup files
+*.backup.*
+src/contexts/CreditsContext.backup.jsx
+
+# API keys and sensitive data (double check these are not committed)
+**/config/keys.js
+**/config/secrets.js

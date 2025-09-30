@@ -3,15 +3,14 @@ import React from 'react';
     import { Helmet } from 'react-helmet';
     import { CreditCard, Zap, Star, Check, Crown } from 'lucide-react';
     import { useAuth } from '@/contexts/AuthContext';
-import { useCredits } from '@/contexts/CreditsContext';
-    import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
     import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
     import { toast } from '@/components/ui/use-toast';
     import Sidebar from '@/components/Layout/Sidebar';
 
     const Subscription = () => {
   const { userProfile } = useAuth();
-  const { credits } = useCredits();
+  const credits = userProfile?.credits || 0;
       
       const handleFeatureClick = (feature) => {
         toast({

@@ -1,19 +1,49 @@
 import { useState, useEffect } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { performSeedreamGeneration, generateCategoryPrompt } from '@/lib/seedream';
-import { useCredits } from '@/contexts/CreditsContext';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const useSeedream = () => {
   const [generatedImage, setGeneratedImage] = useState(null);
   const [history, setHistory] = useState([]);
   const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   
-  // Use Credits Context
-  const { credits, isLoading, setIsLoading, deductCredits, addCredits, checkCredits } = useCredits();
+  // Use Auth Context for user data and Firebase hooks for credits
+  const { user, userProfile, updateUserData } = useAuth();
   
-  // Use Auth Context for saving photos
-  const { userProfile, updateUserData } = useAuth();
+  // Check if user has enough credits
+  const checkCredits = (amount) => {
+    if (!userProfile || (userProfile.credits || 0) < amount) {
+      toast({
+        title: "Onvoldoende credits",
+        description: `Je hebt ${amount} credit${amount > 1 ? 's' : ''} nodig voor deze actie. Je hebt nog ${userProfile?.credits || 0} credits.`,
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  };
+
+  // Deduct credits function using Firebase
+  const deductCredits = async (amount) => {
+    if (!user || !userProfile) return false;
+    
+    try {
+      // Import the database service
+      const { databaseService } = await import('@/services/databaseService');
+      await databaseService.deductCredits(user.uid, amount);
+      return true;
+    } catch (error) {
+      console.error('Error deducting credits:', error);
+      toast({
+        title: "Fout bij credits aftrekken",
+        description: "Er is een fout opgetreden bij het aftrekken van credits.",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
 
   // Function to automatically save generated image to My Photos
   const saveToMyPhotos = async (imageUrl, prompt, category) => {
@@ -122,7 +152,7 @@ export const useSeedream = () => {
         
         toast({
           title: "Afbeelding gegenereerd!",
-          description: `Succesvol een ${category} afbeelding gemaakt. Credits resterend: ${credits - creditCost}`,
+          description: `Succesvol een ${category} afbeelding gemaakt. Credits resterend: ${(userProfile?.credits || 0) - creditCost}`,
         });
         
         // Automatically save to My Photos
@@ -206,7 +236,7 @@ export const useSeedream = () => {
     isLoading,
     generatedImage,
     history,
-    credits,
+    credits: userProfile?.credits || 0,
     error,
     
     // Actions

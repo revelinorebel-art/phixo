@@ -3,7 +3,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { toast } from '@/components/ui/use-toast';
 
 // IMPORTANT: Replace with your actual Stripe Publishable Key
-const STRIPE_PUBLISHABLE_KEY = "pk_test_YOUR_KEY"; // Replace this placeholder
+const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
 let stripePromise;
 const getStripe = () => {
@@ -17,10 +17,10 @@ const useStripeCheckout = () => {
   const [loading, setLoading] = useState(false);
 
   const redirectToCheckout = async (priceId, callbacks = {}) => {
-    if (STRIPE_PUBLISHABLE_KEY === "pk_test_YOUR_KEY") {
+    if (!STRIPE_PUBLISHABLE_KEY || STRIPE_PUBLISHABLE_KEY === "pk_test_YOUR_KEY") {
       toast({
         title: "Stripe is niet geconfigureerd 🔑",
-        description: "Vervang de placeholder API-sleutel in src/hooks/useStripeCheckout.js.",
+        description: "Voeg VITE_STRIPE_PUBLISHABLE_KEY toe aan je .env bestand.",
         variant: "destructive",
       });
       return;

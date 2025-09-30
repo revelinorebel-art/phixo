@@ -4,7 +4,7 @@ import React, { useState } from 'react';
     import { Link, useNavigate } from 'react-router-dom';
     import { Image, Sparkles, ArrowLeft, FileUp } from 'lucide-react';
     // import { useAuth } from '@/contexts/AuthContext'; // Temporarily disabled for testing
-import { useCredits } from '@/contexts/CreditsContext';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
@@ -18,7 +18,7 @@ import { v4 as uuidv4 } from 'uuid';
   // Mock user data for testing without Firebase
   const user = { uid: 'test-user-123' };
   const userProfile = { photos: [] };
-  const { credits } = useCredits();
+  const credits = 0; // Mock credits for testing
   const updateUserData = (data) => {
     console.log('Mock updateUserData called with:', data);
     return Promise.resolve();

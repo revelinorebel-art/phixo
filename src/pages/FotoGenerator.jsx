@@ -15,14 +15,17 @@ import Sidebar from '@/components/Layout/Sidebar';
 import { BackgroundGradient } from '@/components/ui/background-gradient';
 import LoadingAnimation from '@/components/ui/loading-animation';
 import { useSeedream } from '@/hooks/useSeedream';
-import { useCredits } from '@/contexts/CreditsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useImageStorage, useImageHistory } from '@/hooks/useFirebase';
 import { toast } from '@/components/ui/use-toast';
 
 const FotoGenerator = () => {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const { callSeedreamApi, isLoading, generatedImage, setGeneratedImage, history, clearHistory } = useSeedream();
-  const { credits } = useCredits();
+  const { callSeedreamApi, isLoading, generatedImage, setGeneratedImage, history, clearHistory, credits } = useSeedream();
+  const { user } = useAuth();
+  const { uploadImage, saveGeneratedImage, isUploading } = useImageStorage();
+  const { saveImageGeneration, refreshHistory, history: imageHistory } = useImageHistory();
   
   // Gescheiden state voor genereren en bewerken
   const [activeTab, setActiveTab] = useState('generate');
@@ -39,6 +42,13 @@ const FotoGenerator = () => {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [redoStack, setRedoStack] = useState([]);
 
+  // Load image history on component mount
+  useEffect(() => {
+    if (user) {
+      refreshHistory();
+    }
+  }, [user, refreshHistory]);
+
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       toast({
@@ -49,10 +59,46 @@ const FotoGenerator = () => {
       return;
     }
 
+    if (!user) {
+      toast({
+        title: "Inloggen vereist",
+        description: "Je moet ingelogd zijn om foto's te genereren.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check credits before generating
+    if (credits < 1) {
+      toast({
+        title: "Geen credits meer",
+        description: "Je hebt niet genoeg credits om deze actie uit te voeren.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const result = await callSeedreamApi(prompt, aspectRatio, 'foto-generatie');
       if (result && result.imageUrl) {
-        setGenerateImage(result.imageUrl); // Gebruik gescheiden state voor genereren
+        setGenerateImage(result.imageUrl);
+        
+        // Credits are automatically deducted in useSeedream
+        
+        // Save generated image to Firebase Storage and history
+        try {
+          const savedImageUrl = await saveGeneratedImage(result.imageUrl, `generated-${Date.now()}.jpg`);
+          await saveImageGeneration({
+            imageUrl: savedImageUrl,
+            prompt: prompt,
+            aspectRatio: aspectRatio,
+            type: 'generated',
+            timestamp: new Date()
+          });
+        } catch (storageError) {
+          console.error('Error saving image to Firebase:', storageError);
+          // Don't show error to user as the image was still generated successfully
+        }
       }
     } catch (error) {
       console.error('Generation error:', error);
@@ -94,21 +140,42 @@ const FotoGenerator = () => {
   };
 
   // Bewerk functies
-  const handleImageUpload = (event) => {
+  const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const imageUrl = e.target.result;
-        setUploadedImage(imageUrl);
-        setOriginalImageForEdit(imageUrl);
-        setEditedImage(imageUrl);
-        setEditHistory([imageUrl]);
+      if (!user) {
+        toast({
+          title: "Inloggen vereist",
+          description: "Je moet ingelogd zijn om afbeeldingen te uploaden.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        // Upload to Firebase Storage
+        const uploadedUrl = await uploadImage(file, `uploads/${Date.now()}-${file.name}`);
+        
+        setUploadedImage(uploadedUrl);
+        setOriginalImageForEdit(uploadedUrl);
+        setEditedImage(uploadedUrl);
+        setEditHistory([uploadedUrl]);
         setHistoryIndex(0);
         setRedoStack([]);
         setShowBeforeAfter(false);
-      };
-      reader.readAsDataURL(file);
+
+        toast({
+          title: "Upload succesvol",
+          description: "Je afbeelding is geüpload en klaar voor bewerking.",
+        });
+      } catch (error) {
+        console.error('Upload error:', error);
+        toast({
+          title: "Upload mislukt",
+          description: "Er is een fout opgetreden bij het uploaden van je afbeelding.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -131,6 +198,25 @@ const FotoGenerator = () => {
       return;
     }
 
+    if (!user) {
+      toast({
+        title: "Inloggen vereist",
+        description: "Je moet ingelogd zijn om afbeeldingen te bewerken.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check credits before editing
+    if (credits < 1) {
+      toast({
+        title: "Geen credits meer",
+        description: "Je hebt niet genoeg credits om deze actie uit te voeren.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsEditing(true);
     
     try {
@@ -145,20 +231,50 @@ const FotoGenerator = () => {
       );
       
       if (result && result.imageUrl) {
-        // Clear redo stack wanneer nieuwe bewerking wordt gemaakt
-        setRedoStack([]);
+        // Credits are automatically deducted in useSeedream
         
-        // Update edit history met het directe resultaat
-        const newHistory = [...editHistory, result.imageUrl];
-        setEditHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
-        setEditedImage(result.imageUrl);
-        setShowBeforeAfter(true);
-        
-        toast({
-          title: "Bewerking voltooid!",
-          description: "Je foto is succesvol bewerkt met PHIXO AI.",
-        });
+        // Save edited image to Firebase Storage
+        try {
+          const savedImageUrl = await saveGeneratedImage(result.imageUrl, `edited-${Date.now()}.jpg`);
+          
+          // Clear redo stack wanneer nieuwe bewerking wordt gemaakt
+          setRedoStack([]);
+          
+          // Update edit history met het directe resultaat
+          const newHistory = [...editHistory, savedImageUrl];
+          setEditHistory(newHistory);
+          setHistoryIndex(newHistory.length - 1);
+          setEditedImage(savedImageUrl);
+          setShowBeforeAfter(true);
+          
+          // Save to image history
+          await saveImageGeneration({
+            imageUrl: savedImageUrl,
+            prompt: editPrompt,
+            aspectRatio: '1:1',
+            type: 'edited',
+            originalImage: originalImageForEdit,
+            timestamp: new Date()
+          });
+          
+          toast({
+            title: "Bewerking voltooid!",
+            description: "Je foto is succesvol bewerkt met PHIXO AI.",
+          });
+        } catch (storageError) {
+          console.error('Error saving edited image:', storageError);
+          // Still show the result even if saving failed
+          const newHistory = [...editHistory, result.imageUrl];
+          setEditHistory(newHistory);
+          setHistoryIndex(newHistory.length - 1);
+          setEditedImage(result.imageUrl);
+          setShowBeforeAfter(true);
+          
+          toast({
+            title: "Bewerking voltooid!",
+            description: "Je foto is succesvol bewerkt met PHIXO AI.",
+          });
+        }
       } else {
         throw new Error("PHIXO bewerking mislukt - geen resultaat ontvangen");
       }
@@ -468,13 +584,13 @@ const FotoGenerator = () => {
                         </div>
 
                         {/* Recente Gegenereerde Foto's */}
-                        {history.length > 0 && (
+                        {imageHistory && imageHistory.length > 0 && (
                           <div>
                             <Label className="text-white/80 text-sm font-medium mb-3 block">
                               Recente Gegenereerde Foto's
                             </Label>
                             <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                              {history.slice(0, 6).map((item) => (
+                              {imageHistory.slice(0, 6).map((item) => (
                                 <div
                                   key={item.id}
                                   className="group cursor-pointer"
@@ -487,13 +603,18 @@ const FotoGenerator = () => {
                                       className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Edit3 className="w-6 h-6 text-white" />
-                                    </div>
                                   </div>
-                                  <p className="text-white/60 text-xs mt-1 truncate">
+                                  <p className="text-white/60 text-xs mt-2 truncate">
                                     {item.prompt}
                                   </p>
+                                  <div className="flex items-center justify-between mt-1">
+                                    <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
+                                      {item.aspectRatio}
+                                    </span>
+                                    <span className="text-xs text-white/40">
+                                      {item.type === 'generated' ? 'Gegenereerd' : 'Bewerkt'}
+                                    </span>
+                                  </div>
                                 </div>
                               ))}
                             </div>

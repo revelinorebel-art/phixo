@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet';
 import { Link, useNavigate } from 'react-router-dom';
 import { Layers, Sparkles, ArrowLeft, FileUp, Wand2, Lightbulb, Download, BookOpen, Loader2, X, RefreshCw, Edit3, Undo, Redo } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCredits } from '@/contexts/CreditsContext';
+
 import useNanoBanana from '@/hooks/useNanoBanana';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,7 +22,6 @@ import ResolutionSelector from '@/components/ui/ResolutionSelector';
 
 const MockupCreator = () => {
   const { user } = useAuth();
-  const { credits, checkCredits, deductCredits } = useCredits();
   const navigate = useNavigate();
   
   // State for iterative editing - must be defined before useNanoBanana
@@ -41,7 +40,8 @@ const MockupCreator = () => {
     redo,
     canUndo,
     canRedo,
-    originalImageUrl
+    originalImageUrl,
+    credits
   } = useNanoBanana(baseGeneratedImage, 'mockup-creator');
   
   // State for multiple images (up to 4)
@@ -229,7 +229,7 @@ const MockupCreator = () => {
     }
     
     const requiredCredits = resolution === '4k' ? 2 : 1;
-    if (!checkCredits(requiredCredits)) {
+    if (credits < requiredCredits) {
       toast({ 
         title: "Onvoldoende credits", 
         description: `Je hebt ${requiredCredits} credit${requiredCredits > 1 ? 's' : ''} nodig voor een mockup. Koop meer credits.`, 
@@ -345,8 +345,7 @@ const MockupCreator = () => {
            setOriginalImages({...images});
            setIsEditingMode(true);
            
-           // Deduct credits
-           await deductCredits(1);
+           // Credits are automatically deducted in useNanoBanana
            
            // Show success toast
            const selectedCount = getSelectedImagesCount();

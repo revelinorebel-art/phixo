@@ -1,13 +1,35 @@
 import { useState, useCallback } from 'react';
 import { toast } from '@/components/ui/use-toast';
-import { useCredits } from '@/contexts/CreditsContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 const useImagen4 = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
-  const { credits, checkCredits, deductCredits } = useCredits();
+  const { user, userProfile } = useAuth();
+
+  // Check if user has enough credits
+  const checkCredits = async (amount) => {
+    if (!userProfile || (userProfile.credits || 0) < amount) {
+      return false;
+    }
+    return true;
+  };
+
+  // Deduct credits function using Firebase
+  const deductCredits = async (amount) => {
+    if (!user || !userProfile) return false;
+    
+    try {
+      const { databaseService } = await import('@/services/databaseService');
+      await databaseService.deductCredits(user.uid, amount);
+      return true;
+    } catch (error) {
+      console.error('Error deducting credits:', error);
+      return false;
+    }
+  };
 
   const generateImage = useCallback(async (prompt, aspectRatio = '1:1') => {
     // Check credits first
@@ -107,7 +129,7 @@ const useImagen4 = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [credits, checkCredits, deductCredits, history]);
+  }, [userProfile?.credits, history]);
 
   const clearHistory = useCallback(() => {
     setHistory([]);
@@ -133,7 +155,8 @@ const useImagen4 = () => {
     error,
     history,
     clearHistory,
-    loadHistory
+    loadHistory,
+    credits: userProfile?.credits || 0
   };
 };
 

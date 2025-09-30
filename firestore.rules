@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can only access their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Validate user document structure
+      allow create: if request.auth != null 
+        && request.auth.uid == userId
+        && validateUserData(request.resource.data);
+      
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && validateUserUpdate(request.resource.data, resource.data);
+    }
+    
+    // Image generations collection - users can only access their own generations
+    match /imageGenerations/{generationId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+      
+      allow create: if request.auth != null 
+        && request.auth.uid == request.resource.data.userId
+        && validateImageGeneration(request.resource.data);
+    }
+    
+    // Credit transactions collection - users can only read their own transactions
+    match /creditTransactions/{transactionId} {
+      allow read: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+      
+      // Only server can create credit transactions
+      allow create: if false;
+      allow update, delete: if false;
+    }
+    
+    // Subscription data (for future Stripe integration)
+    match /subscriptions/{subscriptionId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.userId;
+    }
+    
+    // Helper functions for validation
+    function validateUserData(data) {
+      return data.uid is string &&
+             data.email is string &&
+             data.credits is number &&
+             data.credits >= 0 &&
+             data.credits <= 10000; // Reasonable upper limit
+    }
+    
+    function validateUserUpdate(newData, oldData) {
+      // Prevent users from directly modifying certain fields
+      return !newData.diff(oldData).affectedKeys().hasAny(['uid', 'createdAt', 'totalCreditsUsed', 'totalImagesGenerated']);
+    }
+    
+    function validateImageGeneration(data) {
+      return data.keys().hasAll(['userId', 'prompt', 'createdAt']) &&
+             data.userId is string &&
+             data.prompt is string &&
+             data.prompt.size() <= 1000 && // Limit prompt length
+             data.creditsUsed is number &&
+             data.creditsUsed > 0 &&
+             data.creditsUsed <= 10; // Reasonable credit limit per generation
+    }
+  }
+}

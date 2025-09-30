@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
     import { motion } from 'framer-motion';
     import { Helmet } from 'react-helmet';
     import { Link } from 'react-router-dom';
-    import { Image, Upload, Trash2, Edit, Filter, Download, Search, Grid, List, ArrowLeft } from 'lucide-react';
+    import { Image, Upload, Trash2, Edit, Filter, Download, Search, Grid, List, ArrowLeft, RefreshCw } from 'lucide-react';
     import { Button } from '@/components/ui/button';
     import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card';
     import { Input } from '@/components/ui/input';
@@ -10,44 +10,125 @@ import React, { useEffect, useState } from 'react';
     import { toast } from '@/components/ui/use-toast';
     import Sidebar from '@/components/Layout/Sidebar';
     import { useAuth } from '@/contexts/AuthContext';
-    // import { ref, deleteObject } from 'firebase/storage'; // Temporarily disabled
+import { useImageStorage, useImageHistory } from '@/hooks/useFirebase';
+// import { ref, deleteObject } from 'firebase/storage'; // Temporarily disabled
 // import { storage } from '@/lib/firebase'; // Temporarily disabled
 
     const MyPhotos = () => {
-      const { user, userProfile, updateUserData } = useAuth();
-      const [photos, setPhotos] = useState([]);
-      const [filteredPhotos, setFilteredPhotos] = useState([]);
-      const [searchTerm, setSearchTerm] = useState('');
-      const [filterCategory, setFilterCategory] = useState('all');
-      const [viewMode, setViewMode] = useState('grid');
+    const { user, userProfile, updateUserData } = useAuth();
+    const { getUserImages } = useImageStorage();
+const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = useImageHistory();
+    const [photos, setPhotos] = useState([]);
+    const [filteredPhotos, setFilteredPhotos] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterCategory, setFilterCategory] = useState('all');
+    const [viewMode, setViewMode] = useState('grid');
+    const [loadingFirebasePhotos, setLoadingFirebasePhotos] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
 
       useEffect(() => {
-    // Load photos from localStorage where they are actually saved
-    const loadPhotos = () => {
+    const loadAllPhotos = async () => {
+      // Load photos from localStorage where they are actually saved
       const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
       console.log('Loaded photos from localStorage:', savedPhotos);
-      setPhotos(savedPhotos);
+      
+      let allPhotos = [...savedPhotos];
+
+      // Also check userProfile.photos for backward compatibility
+      if (userProfile && userProfile.photos) {
+        const userPhotos = userProfile.photos.map(photo => ({
+          ...photo,
+          source: 'userProfile'
+        }));
+        allPhotos = [...allPhotos, ...userPhotos];
+      }
+
+      // Load photos from Firebase Storage
+      if (user) {
+        try {
+          setLoadingFirebasePhotos(true);
+          const firebasePhotos = await getUserImages();
+          console.log('Loaded photos from Firebase Storage:', firebasePhotos);
+          
+          // Convert Firebase photos to our format
+          const formattedFirebasePhotos = firebasePhotos.map(photo => ({
+            id: photo.name, // Use filename as ID
+            name: photo.metadata?.originalName || photo.name,
+            url: photo.url,
+            date: photo.timeCreated,
+            category: photo.metadata?.category || 'bewerkt',
+            prompt: photo.metadata?.prompt || '',
+            source: 'firebase',
+            size: photo.size,
+            contentType: photo.contentType,
+            metadata: photo.metadata
+          }));
+          
+          allPhotos = [...allPhotos, ...formattedFirebasePhotos];
+        } catch (error) {
+          console.error('Error loading Firebase photos:', error);
+          toast({
+            title: "Fout bij laden Firebase foto's",
+            description: "Kon niet alle foto's laden uit de cloud.",
+            variant: "destructive"
+          });
+        } finally {
+          setLoadingFirebasePhotos(false);
+        }
+      }
+
+      // Load photos from Image History (generated photos)
+      if (imageHistory && imageHistory.length > 0) {
+        console.log('Loaded photos from Image History:', imageHistory);
+        
+        // Convert image history to our format
+        const formattedHistoryPhotos = imageHistory.map(item => ({
+          id: item.id || `history-${Date.now()}-${Math.random()}`,
+          name: `Gegenereerde foto - ${item.prompt?.substring(0, 30) || 'Onbekend'}...`,
+          url: item.imageUrl,
+          date: item.createdAt || item.timestamp || new Date().toISOString(),
+          category: 'ai-gegenereerd',
+          prompt: item.prompt || '',
+          source: 'imageHistory',
+          type: 'ai-generated',
+          aspectRatio: item.aspectRatio || '1:1'
+        }));
+        
+        allPhotos = [...allPhotos, ...formattedHistoryPhotos];
+      }
+
+      // Merge and deduplicate based on URL
+      const uniquePhotos = allPhotos.filter((photo, index, self) => 
+        index === self.findIndex(p => p.url === photo.url)
+      );
+      
+      // Sort by date (newest first)
+      uniquePhotos.sort((a, b) => new Date(b.date) - new Date(a.date));
+      
+      console.log('Final photos after merge:', uniquePhotos);
+      setPhotos(uniquePhotos);
     };
 
-    loadPhotos();
+    loadAllPhotos();
+  }, [user, userProfile, getUserImages, imageHistory, loadingImageHistory, refreshKey]);
 
-    // Also check userProfile.photos for backward compatibility
-    if (userProfile && userProfile.photos) {
-      const userPhotos = userProfile.photos.map(photo => ({
-        ...photo,
-        source: 'userProfile'
-      }));
-      setPhotos(prevPhotos => {
-        // Merge and deduplicate
-        const allPhotos = [...prevPhotos, ...userPhotos];
-        const uniquePhotos = allPhotos.filter((photo, index, self) => 
-          index === self.findIndex(p => p.url === photo.url)
-        );
-        console.log('Final photos after merge:', uniquePhotos);
-        return uniquePhotos;
-      });
-    }
-  }, [userProfile]);
+  // Refresh function that can be called to reload all photos
+  const refreshPhotos = async () => {
+    console.log('🔄 Refreshing photos...');
+    await refreshHistory(); // Refresh image history first
+    setRefreshKey(prev => prev + 1); // Trigger useEffect to reload all photos
+  };
+
+  // Auto-refresh when window gains focus (user returns from other tabs/apps)
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('🔄 Window focused - auto-refreshing photos...');
+      refreshPhotos();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
       // Filter and search photos
       useEffect(() => {
@@ -164,15 +245,33 @@ import React, { useEffect, useState } from 'react';
                     <div>
                       <h1 className="text-4xl font-bold gradient-text mb-2">Mijn Foto's</h1>
                       <p className="text-white/70 text-lg">Beheer en optimaliseer je foto's met AI</p>
-                      <p className="text-white/50 text-sm mt-1">{filteredPhotos.length} van {photos.length} foto's</p>
+                      <p className="text-white/50 text-sm mt-1">
+                        {filteredPhotos.length} van {photos.length} foto's
+                        {(loadingFirebasePhotos || loadingImageHistory) && (
+                          <span className="ml-2 text-blue-400">
+                            • Laden van foto's...
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
-                  <Link to="/upload-photos">
-                    <Button className="button-glow">
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Foto's
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={refreshPhotos}
+                      variant="outline"
+                      className="border-white/20 hover:bg-white/10 text-white"
+                      disabled={loadingFirebasePhotos || loadingImageHistory}
+                    >
+                      <RefreshCw className={`w-4 h-4 mr-2 ${(loadingFirebasePhotos || loadingImageHistory) ? 'animate-spin' : ''}`} />
+                      Vernieuwen
                     </Button>
-                  </Link>
+                    <Link to="/upload-photos">
+                      <Button className="button-glow">
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Foto's
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
 
                 {/* Search and Filter Controls */}

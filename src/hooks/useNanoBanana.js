@@ -2,10 +2,35 @@ import { useState, useCallback, useEffect } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { performNanoBananaEdit, uploadImageForNanoBanana } from '@/lib/nano-banana';
 import { performSeedreamGeneration } from '@/lib/seedream';
-import { useCredits } from '@/contexts/CreditsContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 const useNanoBanana = (initialImageUrl, photoId) => {
-    const { credits, deductCredits, checkCredits } = useCredits();
+    const { user, userProfile } = useAuth();
+    
+    // Get credits from userProfile
+    const credits = userProfile?.credits || 0;
+    
+    // Check if user has enough credits
+    const checkCredits = (amount) => {
+        if (!userProfile || credits < amount) {
+            return false;
+        }
+        return true;
+    };
+
+    // Deduct credits function using Firebase
+    const deductCredits = async (amount) => {
+        if (!user || !userProfile) return false;
+        
+        try {
+            const { databaseService } = await import('@/services/databaseService');
+            await databaseService.deductCredits(user.uid, amount);
+            return true;
+        } catch (error) {
+            console.error('Error deducting credits:', error);
+            return false;
+        }
+    };
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     
@@ -178,6 +203,7 @@ const useNanoBanana = (initialImageUrl, photoId) => {
         canUndo,
         canRedo,
         originalImageUrl: history[0],
+        credits,
     };
 };
 

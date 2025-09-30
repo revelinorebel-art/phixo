@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { ReactCompareSlider, ReactCompareSliderImage } from 'react-compare-slider';
 // import { useAuth } from '@/contexts/AuthContext'; // Temporarily disabled for testing
-import { useCredits } from '@/contexts/CreditsContext';
+
 import { toast } from '@/components/ui/use-toast';
 import Sidebar from '@/components/Layout/Sidebar';
 import { Button } from '@/components/ui/button';
@@ -19,18 +19,19 @@ import { BackgroundGradient } from '@/components/ui/background-gradient';
 import LoadingAnimation from '@/components/ui/loading-animation';
 import { 
   ArrowLeft, Sparkles, Download, Undo, Redo, Wand2, Scissors,
-  Paintbrush, Sun, Home, Utensils, ShoppingBag, Camera, X, FileUp
+  Paintbrush, Sun, Home, Utensils, ShoppingBag, Camera, X, FileUp, Cloud, Check
 } from 'lucide-react';
 // useAIApi removed - only using Replicate/Nano Banana
 import useNanoBanana from '@/hooks/useNanoBanana';
-    
+import { uploadEditedPhoto } from '@/services/storageService';
+
 
 const PhotoEditor = () => {
   const { photoId } = useParams();
   // Mock user profile for testing without Firebase
   const userProfile = { name: 'Test User' };
   const authLoading = false;
-  const { credits } = useCredits();
+
   const navigate = useNavigate();
 
   const [photo, setPhoto] = useState(null);
@@ -44,7 +45,10 @@ const PhotoEditor = () => {
   const [photoDimensions, setPhotoDimensions] = useState({ width: 0, height: 0, aspectRatio: 1 });
   const [isInitializing, setIsInitializing] = useState(true);
   
-
+  // Storage state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedToStorage, setUploadedToStorage] = useState(false);
 
   const initialImageUrl = useMemo(() => 
     photo?.url || null,
@@ -60,7 +64,8 @@ const PhotoEditor = () => {
     redo: nanoBananaRedo, 
     canUndo: nanoBananaCanUndo, 
     canRedo: nanoBananaCanRedo, 
-    originalImageUrl: nanoBananaOriginalUrl 
+    originalImageUrl: nanoBananaOriginalUrl,
+    credits 
   } = useNanoBanana(initialImageUrl, photoId);
 
 
@@ -78,43 +83,53 @@ const PhotoEditor = () => {
 
   // Load initial state and saved prompt
   useEffect(() => {
-    if (!authLoading && userProfile && !isCleared) {
-      // Load photo
-      const foundPhoto = userProfile.photos?.find(p => p.id === photoId);
-      if (foundPhoto) {
-        setPhoto(foundPhoto);
-      } else if (photoId) {
-        const storedPhoto = localStorage.getItem(`photo_${photoId}`);
-        if (storedPhoto) {
-          setPhoto(JSON.parse(storedPhoto));
-        } else {
-          setPhoto({
-            id: photoId,
-            name: 'test-photo.jpg',
-            date: new Date().toISOString(),
-            url: 'https://via.placeholder.com/800x600/4F46E5/FFFFFF?text=Test+Photo'
-          });
-        }
+    console.log('🔍 PhotoEditor useEffect triggered:', { 
+      authLoading, 
+      userProfile: !!userProfile, 
+      isCleared, 
+      photoId 
+    });
+    
+    // Since we're using mock data, simplify the loading logic
+    if (!isCleared && photoId) {
+      // Load photo from localStorage first
+      const storedPhoto = localStorage.getItem(`photo_${photoId}`);
+      console.log('💾 Checking localStorage for photo:', { 
+        key: `photo_${photoId}`, 
+        found: !!storedPhoto 
+      });
+      
+      if (storedPhoto) {
+        const parsedPhoto = JSON.parse(storedPhoto);
+        console.log('✅ Found photo in localStorage:', parsedPhoto);
+        setPhoto(parsedPhoto);
+      } else {
+        console.log('⚠️ No photo found, using placeholder');
+        setPhoto({
+          id: photoId,
+          name: 'test-photo.jpg',
+          date: new Date().toISOString(),
+          url: 'https://via.placeholder.com/800x600/4F46E5/FFFFFF?text=Test+Photo'
+        });
       }
       
       // Load saved prompt
-      if (photoId) {
-        const savedProjectData = localStorage.getItem(`project_${photoId}`);
-        if (savedProjectData) {
-          try {
-            const projectState = JSON.parse(savedProjectData);
-            if (projectState?.prompt) {
-              setPrompt(projectState.prompt);
-            }
-          } catch (error) {
-            console.error('Error loading project state:', error);
+      const savedProjectData = localStorage.getItem(`project_${photoId}`);
+      if (savedProjectData) {
+        try {
+          const projectState = JSON.parse(savedProjectData);
+          if (projectState?.prompt) {
+            setPrompt(projectState.prompt);
           }
+        } catch (error) {
+          console.error('Error loading project state:', error);
         }
       }
-      
-      setPageLoading(false);
     }
-  }, [photoId, userProfile, authLoading, isCleared]);
+    
+    console.log('🏁 Setting pageLoading to false');
+    setPageLoading(false);
+  }, [photoId, isCleared]);
 
   // Simple save function without useCallback
   const saveProjectState = () => {
@@ -189,6 +204,64 @@ const PhotoEditor = () => {
     // Clear the prompt field after successful editing to encourage iterative editing
     if (result && result.success) {
       setPrompt('');
+      
+      // Automatically upload the edited photo to Firebase Storage
+      if (result.imageUrl) {
+        await uploadEditedPhotoToStorage(result.imageUrl, params.prompt);
+      }
+    }
+  };
+
+  // Function to upload edited photo to Firebase Storage
+  const uploadEditedPhotoToStorage = async (imageUrl, editPrompt) => {
+    try {
+      setIsUploading(true);
+      setUploadProgress(0);
+      setUploadedToStorage(false);
+
+      // Convert image URL to blob
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+
+      // Create metadata for the edited photo
+      const metadata = {
+        originalPhotoId: photoId,
+        editPrompt: editPrompt,
+        editTimestamp: new Date().toISOString(),
+        originalFileName: photo?.name || 'unknown',
+        editType: 'ai_generated'
+      };
+
+      // Upload to Firebase Storage
+      const uploadResult = await uploadEditedPhoto(blob, metadata, (progress) => {
+        setUploadProgress(progress);
+      });
+
+      if (uploadResult.success) {
+        setUploadedToStorage(true);
+        toast({
+          title: "Foto opgeslagen! ☁️",
+          description: "Je bewerkte foto is automatisch opgeslagen in Firebase Storage.",
+          duration: 3000
+        });
+        
+        // Store the Firebase URL for future reference
+        localStorage.setItem(`edited_photo_${photoId}_${Date.now()}`, JSON.stringify({
+          firebaseUrl: uploadResult.downloadURL,
+          metadata: uploadResult.metadata,
+          localUrl: imageUrl
+        }));
+      }
+    } catch (error) {
+      console.error('Error uploading to Firebase Storage:', error);
+      toast({
+        title: "Upload fout",
+        description: `Kon de bewerkte foto niet opslaan: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -294,7 +367,16 @@ const PhotoEditor = () => {
   };
 
 
+  console.log('🎯 PhotoEditor render check:', { 
+    pageLoading, 
+    authLoading, 
+    photo: !!photo, 
+    photoUrl: photo?.url,
+    shouldShowLoading: pageLoading || authLoading || !photo 
+  });
+
   if (pageLoading || authLoading || !photo) {
+    console.log('⏳ Showing loading screen because:', { pageLoading, authLoading, hasPhoto: !!photo });
     return (
       <div className="flex min-h-screen">
         <Sidebar />
@@ -387,21 +469,51 @@ const PhotoEditor = () => {
                             className="z-20"
                           />
                           
-                          {currentOriginalImageUrl && currentResultImageUrl && (
+                          {currentOriginalImageUrl && (
                             <div className="relative">
-                              <ReactCompareSlider
-                                itemOne={<ReactCompareSliderImage src={currentOriginalImageUrl} alt="Originele afbeelding" style={{objectFit: 'contain', width: '100%', height: '100%', maxHeight: '75vh'}} />}
-                                itemTwo={<ReactCompareSliderImage src={currentResultImageUrl} alt="Bewerkte afbeelding" style={{objectFit: 'contain', width: '100%', height: '100%', maxHeight: '75vh'}} />}
-                                className="rounded-xl overflow-hidden"
-                                style={{
-                                  display: 'flex',
-                                  width: 'auto',
-                                  height: '75vh',
-                                  maxWidth: '90vw',
-                                  aspectRatio: 'auto'
-                                }}
-                              />
-
+                              {currentResultImageUrl && currentOriginalImageUrl !== currentResultImageUrl ? (
+                                <ReactCompareSlider
+                                  itemOne={<ReactCompareSliderImage src={currentOriginalImageUrl} alt="Originele afbeelding" style={{objectFit: 'contain', width: '100%', height: '100%', maxHeight: '75vh'}} />}
+                                  itemTwo={<ReactCompareSliderImage src={currentResultImageUrl} alt="Bewerkte afbeelding" style={{objectFit: 'contain', width: '100%', height: '100%', maxHeight: '75vh'}} />}
+                                  className="rounded-xl overflow-hidden"
+                                  style={{
+                                    display: 'flex',
+                                    width: 'auto',
+                                    height: '75vh',
+                                    maxWidth: '90vw',
+                                    aspectRatio: 'auto'
+                                  }}
+                                />
+                              ) : (
+                                <img 
+                                  src={currentOriginalImageUrl} 
+                                  alt="Originele afbeelding" 
+                                  className="rounded-xl max-h-[75vh] max-w-[90vw] object-contain"
+                                  style={{
+                                    width: 'auto',
+                                    height: 'auto',
+                                    maxHeight: '75vh',
+                                    maxWidth: '90vw'
+                                  }}
+                                />
+                              )}
+                              
+                              {/* Storage Upload Status */}
+                              {(isUploading || uploadedToStorage) && (
+                                <div className="absolute top-4 right-4 bg-black/80 backdrop-blur-sm rounded-lg p-3 flex items-center gap-2">
+                                  {isUploading ? (
+                                    <>
+                                      <Cloud className="w-4 h-4 text-blue-400 animate-pulse" />
+                                      <span className="text-white text-sm">Uploaden... {uploadProgress}%</span>
+                                    </>
+                                  ) : uploadedToStorage ? (
+                                    <>
+                                      <Check className="w-4 h-4 text-green-400" />
+                                      <span className="text-white text-sm">Opgeslagen ☁️</span>
+                                    </>
+                                  ) : null}
+                                </div>
+                              )}
                             </div>
                           )}
                         </>
