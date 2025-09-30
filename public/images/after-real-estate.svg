@@ -1,0 +1,73 @@
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skyGradientAfter" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4A90E2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#87CEEB;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="houseGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F5F5DC;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#DEB887;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="3" dy="3" stdDeviation="3" flood-color="rgba(0,0,0,0.3)"/>
+    </filter>
+  </defs>
+  
+  <!-- Enhanced sky background -->
+  <rect width="400" height="200" fill="url(#skyGradientAfter)"/>
+  
+  <!-- Enhanced ground with texture -->
+  <rect x="0" y="200" width="400" height="100" fill="#2E8B57"/>
+  <rect x="0" y="280" width="400" height="20" fill="#228B22"/>
+  
+  <!-- Enhanced house structure -->
+  <rect x="100" y="120" width="200" height="120" fill="url(#houseGradient)" filter="url(#shadow)"/>
+  
+  <!-- Enhanced roof with gradient -->
+  <polygon points="90,120 200,60 310,120" fill="#8B4513" filter="url(#shadow)"/>
+  <polygon points="95,118 200,65 305,118" fill="#A0522D"/>
+  
+  <!-- Enhanced door -->
+  <rect x="180" y="180" width="40" height="60" fill="#8B4513" filter="url(#shadow)"/>
+  <rect x="182" y="182" width="36" height="56" fill="#A0522D"/>
+  <circle cx="210" cy="210" r="3" fill="#FFD700"/>
+  <rect x="185" y="185" width="30" height="20" fill="#654321" opacity="0.3"/>
+  
+  <!-- Enhanced windows with reflections -->
+  <rect x="130" y="150" width="30" height="25" fill="#4A90E2" filter="url(#shadow)"/>
+  <rect x="240" y="150" width="30" height="25" fill="#4A90E2" filter="url(#shadow)"/>
+  
+  <!-- Window reflections -->
+  <rect x="132" y="152" width="12" height="21" fill="#87CEEB" opacity="0.7"/>
+  <rect x="242" y="152" width="12" height="21" fill="#87CEEB" opacity="0.7"/>
+  
+  <!-- Enhanced window frames -->
+  <rect x="128" y="148" width="34" height="29" fill="none" stroke="#654321" stroke-width="2"/>
+  <rect x="238" y="148" width="34" height="29" fill="none" stroke="#654321" stroke-width="2"/>
+  <line x1="145" y1="148" x2="145" y2="177" stroke="#654321" stroke-width="1"/>
+  <line x1="128" y1="162" x2="162" y2="162" stroke="#654321" stroke-width="1"/>
+  <line x1="255" y1="148" x2="255" y2="177" stroke="#654321" stroke-width="1"/>
+  <line x1="238" y1="162" x2="272" y2="162" stroke="#654321" stroke-width="1"/>
+  
+  <!-- Professional landscaping -->
+  <ellipse cx="80" cy="220" rx="35" ry="25" fill="#32CD32"/>
+  <ellipse cx="75" cy="215" rx="20" ry="15" fill="#228B22"/>
+  <ellipse cx="320" cy="230" rx="40" ry="30" fill="#32CD32"/>
+  <ellipse cx="315" cy="225" rx="25" ry="20" fill="#228B22"/>
+  
+  <!-- Flowers -->
+  <circle cx="70" cy="210" r="3" fill="#FF69B4"/>
+  <circle cx="85" cy="215" r="3" fill="#FF1493"/>
+  <circle cx="310" cy="220" r="3" fill="#FF69B4"/>
+  <circle cx="325" cy="225" r="3" fill="#FF1493"/>
+  
+  <!-- Path -->
+  <ellipse cx="200" cy="250" rx="60" ry="15" fill="#D2B48C"/>
+  <ellipse cx="200" cy="248" rx="55" ry="12" fill="#DEB887"/>
+  
+  <!-- Enhanced lighting and warmth -->
+  <rect width="400" height="300" fill="rgba(255,215,0,0.1)"/>
+  
+  <!-- Text overlay -->
+  <text x="20" y="280" font-family="Arial, sans-serif" font-size="14" fill="#333" font-weight="bold">NA: Professioneel geoptimaliseerd</text>
+</svg>

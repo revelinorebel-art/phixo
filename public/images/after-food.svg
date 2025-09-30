@@ -1,0 +1,68 @@
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="plateGradient" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F0F0F0;stop-opacity:1" />
+    </radialGradient>
+    <linearGradient id="bunGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#F4A460;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D2B48C;stop-opacity:1" />
+    </linearGradient>
+    <filter id="foodShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.2)"/>
+    </filter>
+  </defs>
+  
+  <!-- Professional background with subtle gradient -->
+  <rect width="400" height="300" fill="#2C2C2C"/>
+  <circle cx="200" cy="150" r="120" fill="rgba(255,255,255,0.05)"/>
+  
+  <!-- Professional plate with shadow -->
+  <ellipse cx="200" cy="205" rx="85" ry="18" fill="rgba(0,0,0,0.3)"/>
+  <ellipse cx="200" cy="200" rx="80" ry="15" fill="url(#plateGradient)" filter="url(#foodShadow)"/>
+  
+  <!-- Gourmet burger -->
+  <!-- Bottom bun with sesame seeds -->
+  <ellipse cx="200" cy="190" rx="45" ry="8" fill="url(#bunGradient)" filter="url(#foodShadow)"/>
+  <circle cx="185" cy="187" r="1" fill="#F5DEB3"/>
+  <circle cx="195" cy="185" r="1" fill="#F5DEB3"/>
+  <circle cx="205" cy="186" r="1" fill="#F5DEB3"/>
+  <circle cx="215" cy="188" r="1" fill="#F5DEB3"/>
+  
+  <!-- Juicy patty with grill marks -->
+  <ellipse cx="200" cy="180" rx="40" ry="6" fill="#8B4513" filter="url(#foodShadow)"/>
+  <ellipse cx="200" cy="179" rx="38" ry="5" fill="#A0522D"/>
+  <line x1="180" y1="178" x2="220" y2="178" stroke="#654321" stroke-width="0.5"/>
+  <line x1="185" y1="181" x2="215" y2="181" stroke="#654321" stroke-width="0.5"/>
+  
+  <!-- Fresh lettuce -->
+  <ellipse cx="200" cy="175" rx="35" ry="4" fill="#32CD32" filter="url(#foodShadow)"/>
+  <ellipse cx="195" cy="174" rx="15" ry="2" fill="#228B22"/>
+  <ellipse cx="205" cy="174" rx="15" ry="2" fill="#228B22"/>
+  
+  <!-- Melted cheese -->
+  <ellipse cx="200" cy="170" rx="38" ry="3" fill="#FFD700" filter="url(#foodShadow)"/>
+  <ellipse cx="190" cy="168" rx="8" ry="2" fill="#FFA500"/>
+  <ellipse cx="210" cy="168" rx="8" ry="2" fill="#FFA500"/>
+  
+  <!-- Top bun with shine -->
+  <ellipse cx="200" cy="165" rx="45" ry="8" fill="url(#bunGradient)" filter="url(#foodShadow)"/>
+  <ellipse cx="190" cy="162" rx="15" ry="3" fill="#F5DEB3" opacity="0.6"/>
+  
+  <!-- Professional fries arrangement -->
+  <rect x="120" y="210" width="4" height="25" fill="#FFD700" filter="url(#foodShadow)" transform="rotate(15 122 222)"/>
+  <rect x="130" y="215" width="4" height="20" fill="#FFA500" filter="url(#foodShadow)" transform="rotate(-10 132 225)"/>
+  <rect x="140" y="220" width="4" height="18" fill="#FFD700" filter="url(#foodShadow)" transform="rotate(25 142 229)"/>
+  <rect x="280" y="210" width="4" height="22" fill="#FFA500" filter="url(#foodShadow)" transform="rotate(-20 282 221)"/>
+  <rect x="290" y="218" width="4" height="17" fill="#FFD700" filter="url(#foodShadow)" transform="rotate(30 292 226)"/>
+  
+  <!-- Garnish -->
+  <circle cx="160" cy="190" r="2" fill="#FF6347"/>
+  <circle cx="240" cy="195" r="2" fill="#32CD32"/>
+  
+  <!-- Professional lighting effect -->
+  <ellipse cx="180" cy="140" rx="60" ry="40" fill="rgba(255,255,255,0.1)"/>
+  
+  <!-- Text -->
+  <text x="20" y="280" font-family="Arial, sans-serif" font-size="14" fill="#FFF" font-weight="bold">NA: Professionele food fotografie</text>
+</svg>

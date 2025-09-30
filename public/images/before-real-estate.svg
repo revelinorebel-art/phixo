@@ -1,0 +1,44 @@
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E0F6FF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Sky background -->
+  <rect width="400" height="200" fill="url(#skyGradient)"/>
+  
+  <!-- Ground -->
+  <rect x="0" y="200" width="400" height="100" fill="#8B7355"/>
+  
+  <!-- House structure (basic, unpolished) -->
+  <rect x="100" y="120" width="200" height="120" fill="#D2B48C" stroke="#A0522D" stroke-width="2"/>
+  
+  <!-- Roof -->
+  <polygon points="90,120 200,60 310,120" fill="#8B4513"/>
+  
+  <!-- Door -->
+  <rect x="180" y="180" width="40" height="60" fill="#654321"/>
+  <circle cx="210" cy="210" r="2" fill="#FFD700"/>
+  
+  <!-- Windows (simple) -->
+  <rect x="130" y="150" width="30" height="25" fill="#87CEEB" stroke="#654321" stroke-width="1"/>
+  <rect x="240" y="150" width="30" height="25" fill="#87CEEB" stroke="#654321" stroke-width="1"/>
+  
+  <!-- Window frames -->
+  <line x1="145" y1="150" x2="145" y2="175" stroke="#654321" stroke-width="1"/>
+  <line x1="130" y1="162" x2="160" y2="162" stroke="#654321" stroke-width="1"/>
+  <line x1="255" y1="150" x2="255" y2="175" stroke="#654321" stroke-width="1"/>
+  <line x1="240" y1="162" x2="270" y2="162" stroke="#654321" stroke-width="1"/>
+  
+  <!-- Some basic landscaping -->
+  <ellipse cx="80" cy="220" rx="25" ry="15" fill="#228B22"/>
+  <ellipse cx="320" cy="230" rx="30" ry="20" fill="#228B22"/>
+  
+  <!-- Dull lighting effect -->
+  <rect width="400" height="300" fill="rgba(100,100,100,0.3)"/>
+  
+  <!-- Text overlay -->
+  <text x="20" y="280" font-family="Arial, sans-serif" font-size="14" fill="#333" font-weight="bold">VOOR: Standaard vastgoedfoto</text>
+</svg>

@@ -1,0 +1,58 @@
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f172a;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d97706;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="400" height="300" fill="url(#bg)"/>
+  
+  <!-- Spotlight effect -->
+  <ellipse cx="200" cy="150" rx="120" ry="80" fill="rgba(255,255,255,0.1)"/>
+  
+  <!-- Watch outline -->
+  <circle cx="200" cy="150" r="80" fill="url(#gold)" stroke="#fbbf24" stroke-width="2" filter="url(#glow)"/>
+  <circle cx="200" cy="150" r="70" fill="#1f2937" stroke="#fbbf24" stroke-width="1"/>
+  
+  <!-- Watch face -->
+  <circle cx="200" cy="150" r="60" fill="#111827" stroke="#fbbf24" stroke-width="1"/>
+  
+  <!-- Luxury hour markers -->
+  <circle cx="200" cy="100" r="4" fill="#fbbf24"/>
+  <circle cx="200" cy="200" r="4" fill="#fbbf24"/>
+  <circle cx="150" cy="150" r="4" fill="#fbbf24"/>
+  <circle cx="250" cy="150" r="4" fill="#fbbf24"/>
+  
+  <!-- Diamond accents -->
+  <polygon points="200,90 205,95 200,100 195,95" fill="#ffffff" opacity="0.8"/>
+  <polygon points="200,200 205,205 200,210 195,205" fill="#ffffff" opacity="0.8"/>
+  
+  <!-- Watch hands -->
+  <line x1="200" y1="150" x2="200" y2="120" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>
+  <line x1="200" y1="150" x2="230" y2="150" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Center jewel -->
+  <circle cx="200" cy="150" r="6" fill="#fbbf24" filter="url(#glow)"/>
+  <circle cx="200" cy="150" r="3" fill="#ffffff" opacity="0.8"/>
+  
+  <!-- Luxury watch band -->
+  <rect x="180" y="70" width="40" height="20" fill="url(#gold)" rx="5"/>
+  <rect x="180" y="210" width="40" height="20" fill="url(#gold)" rx="5"/>
+  
+  <!-- Text -->
+  <text x="200" y="260" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#fbbf24" font-weight="bold">NA - Luxe Horloge</text>
+</svg>
