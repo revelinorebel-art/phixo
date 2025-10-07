@@ -523,29 +523,41 @@ export default storageService;
 // Nieuwe functies voor bewerkte foto's uploaden
 export async function uploadEditedPhoto(blob, metadata, progressCallback) {
   try {
+    console.log('🔄 Starting Firebase Storage upload...', { blob, metadata });
+    
     const user = authService.getCurrentUser();
     if (!user) {
+      console.error('❌ No authenticated user found');
       throw new Error('User must be authenticated to upload edited photos');
     }
+    
+    console.log('✅ User authenticated for upload:', user.uid);
 
     // Valideer blob
     if (!blob || !(blob instanceof Blob)) {
+      console.error('❌ Invalid blob provided:', blob);
       throw new Error('Invalid blob provided');
     }
+    console.log('✅ Blob validation passed');
 
     // Valideer metadata
     if (!metadata || !metadata.category || !metadata.prompt) {
-      throw new Error('Metadata with category and prompt is required');
+      console.error('❌ Invalid metadata provided:', metadata);
+      throw new Error('Metadata must include category and prompt');
     }
+    console.log('✅ Metadata validation passed');
 
     // Genereer unieke bestandsnaam
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substring(2, 15);
     const fileName = `${user.uid}/edited/${metadata.category}/${timestamp}_${randomString}.jpg`;
+    console.log('✅ Generated filename:', fileName);
     
     const storageRef = ref(storage, `images/${fileName}`);
+    console.log('✅ Storage reference created:', storageRef.fullPath);
 
     // Upload met progress tracking
+    console.log('🔄 Starting Firebase upload task...');
     const uploadTask = uploadBytesResumable(storageRef, blob, {
       contentType: 'image/jpeg',
       customMetadata: {
@@ -553,31 +565,38 @@ export async function uploadEditedPhoto(blob, metadata, progressCallback) {
         type: 'edited',
         category: metadata.category,
         prompt: metadata.prompt,
-        aspectRatio: metadata.aspectRatio || 'unknown',
+        aspectRatio: metadata.aspectRatio || '1:1',
         resolution: metadata.resolution || 'unknown',
         originalFileName: metadata.originalFileName || 'unknown',
         editedAt: metadata.editedAt || new Date().toISOString()
       }
     });
+    console.log('✅ Upload task created');
 
     return new Promise((resolve, reject) => {
       uploadTask.on(
         'state_changed',
         (snapshot) => {
           const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log(`📊 Upload progress: ${progress.toFixed(1)}%`);
           if (progressCallback) {
             progressCallback(Math.round(progress));
           }
         },
         (error) => {
+          console.error('❌ Firebase upload error:', error);
+          console.error('Error code:', error.code);
+          console.error('Error message:', error.message);
           reject(new Error(`Upload failed: ${error.message}`));
         },
         async () => {
           try {
+            console.log('🔄 Getting download URL...');
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            console.log('✅ Download URL obtained:', downloadURL);
             const uploadMetadata = await getMetadata(uploadTask.snapshot.ref);
             
-            resolve({
+            const result = {
               fileName: fileName,
               downloadURL: downloadURL,
               metadata: {
@@ -586,8 +605,12 @@ export async function uploadEditedPhoto(blob, metadata, progressCallback) {
                 timeCreated: uploadMetadata.timeCreated,
                 customMetadata: uploadMetadata.customMetadata
               }
-            });
+            };
+            
+            console.log('✅ Firebase upload completed successfully:', result);
+            resolve(result);
           } catch (error) {
+            console.error('❌ Error getting download URL:', error);
             reject(new Error(`Failed to get download URL: ${error.message}`));
           }
         }

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import useNanoBanana from '@/hooks/useNanoBanana';
 import { dataURLtoFile, fileToDataURL, urlToBase64ViaProxy } from '@/lib/image-utils';
+import { autoSaveService } from '@/services/autoSaveService';
 
 const RetouchTools = () => {
   const navigate = useNavigate();
@@ -155,7 +156,28 @@ const RetouchTools = () => {
     setIsEnlarged(false);
   };
   
-  // Functie om bewerking op te slaan in Mijn Foto's
+  // Automatische opslag functie
+  const autoSaveRetouchedPhoto = async (imageUrl, prompt, editType = 'retouch') => {
+    if (!imageUrl || imageUrl === photo?.url) return;
+    
+    try {
+      await autoSaveService.autoSavePhoto({
+        imageUrl: imageUrl,
+        tool: 'retouch-tools',
+        prompt: prompt || 'Foto bewerking',
+        metadata: {
+          editType: editType,
+          originalImage: photo?.url,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('Error auto-saving retouched photo:', error);
+      // Don't show error to user, continue with localStorage fallback
+    }
+  };
+
+  // Functie om bewerking op te slaan in Mijn Foto's (behouden voor compatibiliteit)
   const saveToMyPhotos = async () => {
     if (!currentImage || currentImage === photo?.url) return;
     
@@ -214,8 +236,9 @@ const RetouchTools = () => {
         baseImage: baseImage
       });
       
-      // Als de filter succesvol is toegepast, sla op in Mijn Foto's
-      if (result && result.success) {
+      // Als de filter succesvol is toegepast, automatisch opslaan
+      if (result && result.success && result.imageUrl) {
+        await autoSaveRetouchedPhoto(result.imageUrl, prompt, 'filter');
         saveToMyPhotos();
       }
     } catch (error) {
@@ -249,8 +272,9 @@ const RetouchTools = () => {
         baseImage: baseImage
       });
       
-      // Als de aanpassing succesvol is toegepast, sla op in Mijn Foto's
-      if (result && result.success) {
+      // Als de aanpassing succesvol is toegepast, automatisch opslaan
+      if (result && result.success && result.imageUrl) {
+        await autoSaveRetouchedPhoto(result.imageUrl, prompt, 'adjustment');
         saveToMyPhotos();
       }
     } catch (error) {
@@ -450,9 +474,15 @@ const RetouchTools = () => {
       if (result && result.success) {
         setEditHotspot(null);
         setDisplayHotspot(null);
+        
+        // Automatisch opslaan
+        if (result.imageUrl) {
+          await autoSaveRetouchedPhoto(result.imageUrl, retouchPrompt, 'retouch');
+        }
+        
         setRetouchPrompt('');
         
-        // Sla de bewerking automatisch op in Mijn Foto's
+        // Sla de bewerking ook op in localStorage voor compatibiliteit
         saveToMyPhotos();
       }
     } catch (error) {

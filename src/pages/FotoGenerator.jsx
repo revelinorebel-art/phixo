@@ -18,6 +18,7 @@ import { useSeedream } from '@/hooks/useSeedream';
 import { useAuth } from '@/contexts/AuthContext';
 import { useImageStorage, useImageHistory } from '@/hooks/useFirebase';
 import { toast } from '@/components/ui/use-toast';
+import { autoSaveService } from '@/services/autoSaveService';
 
 const FotoGenerator = () => {
   const [prompt, setPrompt] = useState('');
@@ -85,7 +86,24 @@ const FotoGenerator = () => {
         
         // Credits are automatically deducted in useSeedream
         
-        // Save generated image to Firebase Storage and history
+        // Save generated image using AutoSaveService
+        try {
+          await autoSaveService.autoSavePhoto({
+            imageUrl: result.imageUrl,
+            tool: 'foto-generator',
+            prompt: prompt,
+            metadata: {
+              aspectRatio: aspectRatio,
+              type: 'generated',
+              timestamp: new Date().toISOString()
+            }
+          });
+        } catch (storageError) {
+          console.error('Error auto-saving generated image:', storageError);
+          // Don't show error to user as the image was still generated successfully
+        }
+        
+        // Also save using existing Firebase methods for compatibility
         try {
           const savedImageUrl = await saveGeneratedImage(result.imageUrl, `generated-${Date.now()}.jpg`);
           await saveImageGeneration({
@@ -97,7 +115,6 @@ const FotoGenerator = () => {
           });
         } catch (storageError) {
           console.error('Error saving image to Firebase:', storageError);
-          // Don't show error to user as the image was still generated successfully
         }
       }
     } catch (error) {
@@ -233,7 +250,24 @@ const FotoGenerator = () => {
       if (result && result.imageUrl) {
         // Credits are automatically deducted in useSeedream
         
-        // Save edited image to Firebase Storage
+        // Save edited image using AutoSaveService
+        try {
+          await autoSaveService.autoSavePhoto({
+            imageUrl: result.imageUrl,
+            tool: 'foto-generator',
+            prompt: editPrompt,
+            metadata: {
+              aspectRatio: '1:1',
+              type: 'edited',
+              originalImage: originalImageForEdit,
+              timestamp: new Date().toISOString()
+            }
+          });
+        } catch (autoSaveError) {
+          console.error('Error auto-saving edited image:', autoSaveError);
+        }
+        
+        // Save edited image to Firebase Storage for compatibility
         try {
           const savedImageUrl = await saveGeneratedImage(result.imageUrl, `edited-${Date.now()}.jpg`);
           

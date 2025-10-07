@@ -11,8 +11,8 @@ import React, { useEffect, useState } from 'react';
     import Sidebar from '@/components/Layout/Sidebar';
     import { useAuth } from '@/contexts/AuthContext';
 import { useImageStorage, useImageHistory } from '@/hooks/useFirebase';
-// import { ref, deleteObject } from 'firebase/storage'; // Temporarily disabled
-// import { storage } from '@/lib/firebase'; // Temporarily disabled
+import { storageService } from '@/services/storageService';
+import { databaseService } from '@/services/databaseService';
 
     const MyPhotos = () => {
     const { user, userProfile, updateUserData } = useAuth();
@@ -30,9 +30,14 @@ const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = 
     const loadAllPhotos = async () => {
       // Load photos from localStorage where they are actually saved
       const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
-      console.log('Loaded photos from localStorage:', savedPhotos);
+      console.log('🔍 DEBUG: localStorage myPhotos:', savedPhotos);
+      console.log('🔍 DEBUG: localStorage keys:', Object.keys(localStorage));
+      console.log('🔍 DEBUG: User authenticated:', !!user);
+      console.log('🔍 DEBUG: User profile:', userProfile);
       
       let allPhotos = [...savedPhotos];
+      let formattedFirebasePhotos = [];
+      let formattedHistoryPhotos = [];
 
       // Also check userProfile.photos for backward compatibility
       if (userProfile && userProfile.photos) {
@@ -51,7 +56,7 @@ const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = 
           console.log('Loaded photos from Firebase Storage:', firebasePhotos);
           
           // Convert Firebase photos to our format
-          const formattedFirebasePhotos = firebasePhotos.map(photo => ({
+          formattedFirebasePhotos = firebasePhotos.map(photo => ({
             id: photo.name, // Use filename as ID
             name: photo.metadata?.originalName || photo.name,
             url: photo.url,
@@ -82,7 +87,7 @@ const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = 
         console.log('Loaded photos from Image History:', imageHistory);
         
         // Convert image history to our format
-        const formattedHistoryPhotos = imageHistory.map(item => ({
+        formattedHistoryPhotos = imageHistory.map(item => ({
           id: item.id || `history-${Date.now()}-${Math.random()}`,
           name: `Gegenereerde foto - ${item.prompt?.substring(0, 30) || 'Onbekend'}...`,
           url: item.imageUrl,
@@ -97,14 +102,42 @@ const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = 
         allPhotos = [...allPhotos, ...formattedHistoryPhotos];
       }
 
-      // Merge and deduplicate based on URL
-      const uniquePhotos = allPhotos.filter((photo, index, self) => 
-        index === self.findIndex(p => p.url === photo.url)
-      );
+      // Merge and deduplicate based on multiple criteria
+      const uniquePhotos = allPhotos.filter((photo, index, self) => {
+        return index === self.findIndex(p => {
+          // Primary deduplication by URL
+          if (p.url === photo.url) return true;
+          
+          // Secondary deduplication by prompt + timestamp (within 5 seconds)
+          if (p.prompt && photo.prompt && p.prompt === photo.prompt) {
+            const pTime = new Date(p.date || p.createdAt || p.timestamp);
+            const photoTime = new Date(photo.date || photo.createdAt || photo.timestamp);
+            const timeDiff = Math.abs(pTime - photoTime);
+            
+            // If same prompt and created within 5 seconds, consider duplicate
+            if (timeDiff < 5000) return true;
+          }
+          
+          // Tertiary deduplication by Firebase path (if available)
+          if (p.firebasePath && photo.firebasePath && p.firebasePath === photo.firebasePath) {
+            return true;
+          }
+          
+          return false;
+        });
+      });
       
       // Sort by date (newest first)
       uniquePhotos.sort((a, b) => new Date(b.date) - new Date(a.date));
       
+      console.log('🔍 DEBUG: Photo loading summary:');
+      console.log('  - localStorage photos:', savedPhotos?.length || 0);
+      console.log('  - userProfile photos:', userProfile?.photos?.length || 0);
+      console.log('  - Firebase photos:', formattedFirebasePhotos?.length || 0);
+      console.log('  - imageHistory photos:', formattedHistoryPhotos?.length || 0);
+      console.log('  - Total before deduplication:', allPhotos?.length || 0);
+      console.log('  - Total after deduplication:', uniquePhotos?.length || 0);
+      console.log('  - Duplicates removed:', (allPhotos?.length || 0) - (uniquePhotos?.length || 0));
       console.log('Final photos after merge:', uniquePhotos);
       setPhotos(uniquePhotos);
     };
@@ -130,6 +163,42 @@ const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = 
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
+  // Real-time updates: Listen for localStorage changes (when photos are auto-saved)
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'myPhotos' || e.key === null) {
+        console.log('🔄 localStorage changed - auto-refreshing photos...');
+        refreshPhotos();
+      }
+    };
+
+    // Listen for storage events from other tabs/windows
+    window.addEventListener('storage', handleStorageChange);
+
+    // Also listen for custom events from the same tab (when AutoSaveService saves)
+    const handleCustomStorageChange = () => {
+      console.log('🔄 Custom storage event - auto-refreshing photos...');
+      refreshPhotos();
+    };
+
+    window.addEventListener('localStorageUpdated', handleCustomStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('localStorageUpdated', handleCustomStorageChange);
+    };
+  }, []);
+
+  // Periodic refresh every 30 seconds to catch any missed updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('🔄 Periodic refresh - checking for new photos...');
+      refreshPhotos();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
       // Filter and search photos
       useEffect(() => {
         let filtered = photos;
@@ -152,33 +221,135 @@ const { history: imageHistory, loading: loadingImageHistory, refreshHistory } = 
 
       const handleDelete = async (photoId, photoUrl) => {
         try {
-            // Delete from localStorage
+            console.log('🗑️ Starting delete process for photo:', { photoId, photoUrl });
+            
+            // Find the photo to get all its metadata
+            const photo = photos.find(p => p.id === photoId);
+            console.log('📸 Found photo to delete:', photo);
+
+            // 1. Delete from localStorage
             const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
             const updatedPhotos = savedPhotos.filter(p => p.id !== photoId);
             localStorage.setItem('myPhotos', JSON.stringify(updatedPhotos));
+            console.log('✅ Removed from localStorage');
 
-            // Update local state
-            setPhotos(prevPhotos => prevPhotos.filter(p => p.id !== photoId));
-
-            // If it's from userProfile, also update Firestore
-            const photo = photos.find(p => p.id === photoId);
-            if (photo && photo.source === 'userProfile' && user) {
-                // Delete from Firebase Storage if it's a firebase URL
-            // if (photoUrl.includes('firebasestorage.googleapis.com')) {
-            //     const photoRef = ref(storage, photoUrl);
-            //     await deleteObject(photoRef);
-            // }
-                // Update Firestore document
-                const userPhotos = photos.filter(p => p.source === 'userProfile' && p.id !== photoId);
-                await updateUserData({ photos: userPhotos });
+            // 2. Delete from Firebase Storage if it's a Firebase URL
+            if (photoUrl && photoUrl.includes('firebasestorage.googleapis.com')) {
+              try {
+                // Extract the file path from the Firebase URL
+                const urlParts = photoUrl.split('/');
+                const encodedPath = urlParts[urlParts.length - 1].split('?')[0];
+                const filePath = decodeURIComponent(encodedPath);
+                
+                // Remove the 'images/' prefix if present since storageService adds it
+                const cleanPath = filePath.startsWith('images/') ? filePath.replace('images/', '') : filePath;
+                
+                console.log('🔥 Attempting to delete from Firebase Storage:', cleanPath);
+                await storageService.deleteImage(cleanPath);
+                console.log('✅ Successfully deleted from Firebase Storage');
+              } catch (storageError) {
+                console.warn('⚠️ Firebase Storage delete failed (photo may not exist):', storageError.message);
+                // Don't throw error - continue with other cleanup
+              }
             }
 
+            // 3. Delete from Firebase Storage using firebasePath if available
+            if (photo?.firebasePath && photo.firebasePath !== photoUrl) {
+              try {
+                console.log('🔥 Attempting to delete using firebasePath:', photo.firebasePath);
+                await storageService.deleteImage(photo.firebasePath);
+                console.log('✅ Successfully deleted using firebasePath');
+              } catch (storageError) {
+                console.warn('⚠️ Firebase Storage delete via firebasePath failed:', storageError.message);
+              }
+            }
+
+            // 4. Delete from database (imageHistory)
+            if (user && photo && photoUrl) {
+              try {
+                console.log('🗄️ Attempting to delete from database...', {
+                  photoUrl,
+                  firebasePath: photo.firebasePath,
+                  imagePath: photo.imagePath,
+                  source: photo.source
+                });
+                
+                // Try with photoUrl first, then firebasePath if available
+                let deleteResult = await databaseService.deleteImageGeneration(photoUrl);
+                
+                // If no records deleted and we have a firebasePath, try that too
+                if (deleteResult.deletedCount === 0 && photo.firebasePath && photo.firebasePath !== photoUrl) {
+                  console.log('🔄 Trying with firebasePath...');
+                  deleteResult = await databaseService.deleteImageGeneration(photo.firebasePath);
+                }
+                
+                // If still no records deleted and we have an imagePath, try that too
+                if (deleteResult.deletedCount === 0 && photo.imagePath && photo.imagePath !== photoUrl && photo.imagePath !== photo.firebasePath) {
+                  console.log('🔄 Trying with imagePath...');
+                  deleteResult = await databaseService.deleteImageGeneration(photo.imagePath);
+                }
+                
+                console.log('✅ Database delete result:', deleteResult);
+                
+                // Refresh history to update the UI
+                await refreshHistory();
+                console.log('✅ Refreshed database history');
+              } catch (dbError) {
+                console.warn('⚠️ Database delete failed:', dbError.message);
+              }
+            }
+
+            // 5. Update userProfile if it's from there
+            if (photo && photo.source === 'userProfile' && user) {
+              try {
+                const userPhotos = photos.filter(p => p.source === 'userProfile' && p.id !== photoId);
+                await updateUserData({ photos: userPhotos });
+                console.log('✅ Updated userProfile');
+              } catch (profileError) {
+                console.warn('⚠️ UserProfile update failed:', profileError.message);
+              }
+            }
+
+            // 6. Update local state
+            setPhotos(prevPhotos => prevPhotos.filter(p => p.id !== photoId));
+
+            // 7. Clean up localStorage histories (Seedream and Imagen4)
+            try {
+              // Clean Seedream history
+              const phixoHistory = JSON.parse(localStorage.getItem('phixo_history') || '[]');
+              const updatedPhixoHistory = phixoHistory.filter(item => item.imageUrl !== photoUrl);
+              if (updatedPhixoHistory.length !== phixoHistory.length) {
+                localStorage.setItem('phixo_history', JSON.stringify(updatedPhixoHistory));
+                console.log('✅ Cleaned Seedream history');
+              }
+
+              // Clean Imagen4 history
+              const imagen4History = JSON.parse(localStorage.getItem('imagen4_history') || '[]');
+              const updatedImagen4History = imagen4History.filter(item => item.imageUrl !== photoUrl);
+              if (updatedImagen4History.length !== imagen4History.length) {
+                localStorage.setItem('imagen4_history', JSON.stringify(updatedImagen4History));
+                console.log('✅ Cleaned Imagen4 history');
+              }
+            } catch (historyError) {
+              console.warn('⚠️ History cleanup failed:', historyError.message);
+            }
+
+            // 8. Dispatch custom event to notify other components
+            window.dispatchEvent(new CustomEvent('localStorageUpdated'));
+
+            console.log('✅ Delete process completed successfully');
             toast({
               title: "Foto verwijderd! 🗑️",
-              description: "De foto is succesvol verwijderd.",
+              description: "De foto is succesvol verwijderd uit alle locaties.",
             });
+
         } catch(error) {
-             toast({ title: "Fout bij verwijderen", description: error.message, variant: "destructive" });
+            console.error('❌ Delete process failed:', error);
+            toast({ 
+              title: "Fout bij verwijderen", 
+              description: `Er is een fout opgetreden: ${error.message}`, 
+              variant: "destructive" 
+            });
         }
       };
 

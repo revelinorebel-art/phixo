@@ -10,7 +10,7 @@ export const useSeedream = () => {
   const [isLoading, setIsLoading] = useState(false);
   
   // Use Auth Context for user data and Firebase hooks for credits
-  const { user, userProfile, updateUserData } = useAuth();
+  const { user, userProfile, updateUserData, refreshUserData } = useAuth();
   
   // Check if user has enough credits
   const checkCredits = (amount) => {
@@ -32,7 +32,13 @@ export const useSeedream = () => {
     try {
       // Import the database service
       const { databaseService } = await import('@/services/databaseService');
-      await databaseService.deductCredits(user.uid, amount);
+      await databaseService.deductCredits(amount, user.uid);
+      
+      // Refresh user data to update credits in UI
+      if (refreshUserData) {
+        await refreshUserData();
+      }
+      
       return true;
     } catch (error) {
       console.error('Error deducting credits:', error);
@@ -125,9 +131,15 @@ export const useSeedream = () => {
       console.log('Image input provided:', imageInput ? 'Yes' : 'No');
       console.log('Credits deducted:', creditCost);
       
-      const result = await performSeedreamGeneration(enhancedPrompt, aspectRatio, imageInput, objectImage, resolution, 3, originalDimensions);
+      let result;
+      try {
+        result = await performSeedreamGeneration(enhancedPrompt, aspectRatio, imageInput, objectImage, resolution, 3, originalDimensions);
+      } catch (apiError) {
+        console.error('API call failed:', apiError);
+        result = { success: false, error: apiError.message };
+      }
       
-      if (result.success && result.imageUrl) {
+      if (result && result.success && result.imageUrl) {
         setGeneratedImage(result.imageUrl);
         
         // Add to history
@@ -188,6 +200,14 @@ export const useSeedream = () => {
     });
   };
 
+  const removeFromHistory = (imageUrl) => {
+    console.log('🗑️ Removing from useSeedream history:', imageUrl);
+    const updatedHistory = history.filter(item => item.imageUrl !== imageUrl);
+    setHistory(updatedHistory);
+    localStorage.setItem('phixo_history', JSON.stringify(updatedHistory));
+    console.log('✅ Updated useSeedream history, remaining items:', updatedHistory.length);
+  };
+
 
 
   const downloadImage = async (imageUrl, filename = 'phixo_generated_image.jpg') => {
@@ -242,6 +262,7 @@ export const useSeedream = () => {
     // Actions
     callSeedreamApi,
     clearHistory,
+    removeFromHistory,
     downloadImage,
     regenerateFromHistory,
     

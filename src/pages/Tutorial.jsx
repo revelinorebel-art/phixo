@@ -30,21 +30,7 @@ const Tutorial = () => {
       beforeImage: '/foto\'s/Juwelier/Horloge Voor.png',
       afterImage: '/foto\'s/Juwelier/Horloge na.jpg'
     },
-    {
-      id: 2,
-      title: 'Food Photography Tips',
-      description: 'Maak je gerechten onweerstaanbaar',
-      duration: '7 min',
-      difficulty: 'Gemiddeld',
-      steps: [
-        'Zorg voor goede belichting',
-        'Gebruik de juiste hoek',
-        'Voeg warmte toe aan kleuren',
-        'Verhoog contrast en scherpte'
-      ],
-      beforeImage: '/foto\'s/Restaurant/Biefstuk voor.png',
-      afterImage: '/foto\'s/Restaurant/Biefstuk na.jpg'
-    },
+
     {
       id: 3,
       title: 'Vastgoed Fotografie',

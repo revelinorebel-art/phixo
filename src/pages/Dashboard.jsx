@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
@@ -9,22 +9,270 @@ import {
   TrendingUp, 
   Clock,
   Star,
-  Zap
+  Zap,
+  Bug
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
 import Sidebar from '@/components/Layout/Sidebar';
+import { testFirebaseConnection, testImageUpload } from '@/utils/firebaseTest';
+import { autoSaveService } from '@/services/autoSaveService';
 
 const Dashboard = () => {
-  const { userProfile } = useAuth();
+  const { user, userProfile, logout } = useAuth();
   const credits = userProfile?.credits || 0;
+  const [recentProjects, setRecentProjects] = useState([]);
+  const [totalProjects, setTotalProjects] = useState(0);
+  const [testingFirebase, setTestingFirebase] = useState(false);
+
+  // Debug: Log user status
+  useEffect(() => {
+    console.log('🔍 Dashboard - Current user:', user);
+    console.log('🔍 Dashboard - User profile:', userProfile);
+    console.log('🔍 Dashboard - User authenticated:', !!user);
+    console.log('🔍 Dashboard - localStorage keys:', Object.keys(localStorage));
+    console.log('🔍 Dashboard - phixo_logged_out:', localStorage.getItem('phixo_logged_out'));
+  }, [user, userProfile]);
+
+  // Load recent projects from all sources
+  useEffect(() => {
+    const loadRecentProjects = () => {
+      try {
+        // Get photos from localStorage (auto-saved photos)
+        const localPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
+        
+        // Get photos from userProfile (legacy photos)
+        const profilePhotos = userProfile?.photos || [];
+        
+        // Merge and deduplicate
+        const allPhotos = [...localPhotos, ...profilePhotos];
+        const uniquePhotos = allPhotos.filter((photo, index, self) => 
+          index === self.findIndex(p => p.url === photo.url)
+        );
+        
+        // Sort by date (newest first) and take top 3
+        uniquePhotos.sort((a, b) => {
+          const dateA = new Date(a.createdAt || a.date || 0);
+          const dateB = new Date(b.createdAt || b.date || 0);
+          return dateB - dateA;
+        });
+        
+        setRecentProjects(uniquePhotos.slice(0, 3));
+        setTotalProjects(uniquePhotos.length);
+      } catch (error) {
+        console.error('Error loading recent projects:', error);
+        setRecentProjects([]);
+        setTotalProjects(0);
+      }
+    };
+
+    loadRecentProjects();
+
+    // Listen for real-time updates when new photos are saved
+    const handleStorageUpdate = () => {
+      loadRecentProjects();
+    };
+
+    window.addEventListener('localStorageUpdated', handleStorageUpdate);
+    return () => window.removeEventListener('localStorageUpdated', handleStorageUpdate);
+  }, [userProfile]);
+
+  // Firebase test functions
+  const handleTestFirebaseConnection = async () => {
+    setTestingFirebase(true);
+    try {
+      const result = await testFirebaseConnection();
+      if (result.success) {
+        toast({
+          title: "Firebase verbinding succesvol",
+          description: result.message,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Firebase verbinding gefaald",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Test fout",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setTestingFirebase(false);
+    }
+  };
+
+  const handleTestImageUpload = async () => {
+    setTestingFirebase(true);
+    try {
+      const result = await testImageUpload();
+      if (result.success) {
+        toast({
+          title: "Image upload test succesvol",
+          description: result.message,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Image upload test gefaald",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Test fout",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setTestingFirebase(false);
+    }
+  };
+
+  const handleTestAutoSave = async () => {
+    setTestingFirebase(true);
+    try {
+      // Create a test canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = 100;
+      canvas.height = 100;
+      const ctx = canvas.getContext('2d');
+      
+      // Draw a simple test image
+      ctx.fillStyle = '#FF6B6B';
+      ctx.fillRect(0, 0, 100, 100);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '12px Arial';
+      ctx.fillText('TEST', 35, 55);
+
+      // Convert canvas to blob and create imageUrl
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const imageUrl = URL.createObjectURL(blob);
+      
+      // Create complete photo data with all required fields
+      const photoData = {
+        imageUrl: imageUrl,
+        tool: 'mockup-creator',
+        prompt: 'Test image for debugging AutoSave functionality',
+        timestamp: Date.now(),
+        canvas: canvas,
+        metadata: {
+          width: 100,
+          height: 100,
+          format: 'png',
+          testMode: true
+        }
+      };
+      
+      console.log('Testing AutoSave with photoData:', photoData);
+      
+      // Test the AutoSave service
+      const result = await autoSaveService.autoSavePhoto(photoData);
+      
+      // Clean up the object URL
+      URL.revokeObjectURL(imageUrl);
+      
+      if (result && result.success) {
+        toast({
+          title: "AutoSave Test Successful",
+          description: `Photo saved successfully: ${result.photoId}`,
+          variant: "default"
+        });
+        console.log('AutoSave result:', result);
+      } else {
+        toast({
+          title: "AutoSave Test Failed",
+          description: result?.error || 'Unknown error occurred',
+          variant: "destructive"
+        });
+        console.error('AutoSave failed:', result);
+      }
+    } catch (error) {
+      console.error('AutoSave test error:', error);
+      toast({
+        title: "AutoSave Test Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setTestingFirebase(false);
+    }
+  };
+
+  const handleCheckAuth = async () => {
+    try {
+      const { authService } = await import('@/services/authService');
+      const currentUser = authService.getCurrentUser();
+      
+      console.log('Current user:', currentUser);
+      console.log('User UID:', currentUser?.uid);
+      console.log('User email:', currentUser?.email);
+      console.log('User authenticated:', !!currentUser);
+      
+      if (currentUser) {
+        toast({
+          title: "Authentication Status",
+          description: `Logged in as: ${currentUser.email} (UID: ${currentUser.uid})`,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Authentication Status",
+          description: "No user is currently logged in - Please login first",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+      toast({
+        title: "Auth Check Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleTestLogin = async () => {
+    try {
+      const { authService } = await import('@/services/authService');
+      
+      // Test with a demo account
+      const result = await authService.signIn('test@phixo.nl', 'testpassword123');
+      
+      if (result.error) {
+        toast({
+          title: "Test Login Failed",
+          description: `Error: ${result.error}. You may need to create this test account first.`,
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Test Login Successful",
+          description: "Test user logged in successfully!",
+          variant: "default"
+        });
+      }
+    } catch (error) {
+      console.error('Test login error:', error);
+      toast({
+        title: "Test Login Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
 
       const stats = [
         {
           title: 'Totaal Projecten',
-          value: userProfile?.photos?.length || 0,
+          value: totalProjects,
           icon: Image,
           color: 'from-blue-500 to-cyan-500',
         },
@@ -47,8 +295,6 @@ const Dashboard = () => {
           color: 'from-green-500 to-emerald-500',
         }
       ];
-
-      const recentProjects = userProfile?.photos?.slice(0, 3) || [];
 
       const quickActions = [
         {
@@ -181,15 +427,22 @@ const Dashboard = () => {
                       <CardContent>
                         <div className="space-y-4">
                           {recentProjects.length > 0 ? recentProjects.map((project) => (
-                            <Link to={`/edit-photo/${project.id}`} key={project.id}>
+                            <Link to={`/my-photos`} key={project.id}>
                               <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
                                  <img  className="w-16 h-16 rounded-lg object-contain bg-gray-900/50" alt={project.name} src={project.url} />
                                 <div className="flex-1">
                                   <h4 className="font-semibold text-white truncate">{project.name}</h4>
-                                  <p className="text-sm text-white/70">Foto Optimalisatie</p>
+                                  <p className="text-sm text-white/70">{project.category || 'Foto Optimalisatie'}</p>
                                   <div className="flex items-center gap-2 mt-1">
                                     <Clock className="w-3 h-3 text-white/50" />
-                                    <span className="text-xs text-white/50">{new Date(project.date).toLocaleDateString()}</span>
+                                    <span className="text-xs text-white/50">
+                                      {new Date(project.createdAt || project.date || Date.now()).toLocaleDateString()}
+                                    </span>
+                                    {project.metadata?.autoSaved && (
+                                      <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">
+                                        Auto-opgeslagen
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -257,6 +510,72 @@ const Dashboard = () => {
                     </Card>
                   </motion.div>
                 </div>
+
+                {/* Debug Section - Only show in development */}
+                {process.env.NODE_ENV === 'development' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.8 }}
+                    className="mt-8"
+                  >
+                    <Card className="glass-effect border-white/10">
+                      <CardHeader>
+                        <CardTitle className="text-lg text-white flex items-center gap-2">
+                          <Bug className="w-5 h-5 text-orange-400" />
+                          Debug Tools
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                         <div className="flex flex-wrap gap-2">
+                           <Button
+                             onClick={handleCheckAuth}
+                             variant="outline"
+                             size="sm"
+                             className="border-purple-500/20 hover:bg-purple-500/10 text-purple-400"
+                           >
+                             Check Auth
+                           </Button>
+                           <Button
+                             onClick={handleTestLogin}
+                             variant="outline"
+                             size="sm"
+                             className="border-yellow-500/20 hover:bg-yellow-500/10 text-yellow-400"
+                           >
+                             Test Login
+                           </Button>
+                           <Button
+                             onClick={handleTestFirebaseConnection}
+                             disabled={testingFirebase}
+                             variant="outline"
+                             size="sm"
+                             className="border-orange-500/20 hover:bg-orange-500/10 text-orange-400"
+                           >
+                             {testingFirebase ? 'Testing...' : 'Firebase Test'}
+                           </Button>
+                           <Button
+                             onClick={handleTestImageUpload}
+                             disabled={testingFirebase}
+                             variant="outline"
+                             size="sm"
+                             className="border-blue-500/20 hover:bg-blue-500/10 text-blue-400"
+                           >
+                             {testingFirebase ? 'Testing...' : 'Image Upload'}
+                           </Button>
+                           <Button
+                             onClick={handleTestAutoSave}
+                             disabled={testingFirebase}
+                             variant="outline"
+                             size="sm"
+                             className="border-green-500/20 hover:bg-green-500/10 text-green-400"
+                           >
+                             {testingFirebase ? 'Testing...' : 'AutoSave Test'}
+                           </Button>
+                         </div>
+                       </CardContent>
+                    </Card>
+                  </motion.div>
+                )}
               </motion.div>
             </main>
           </div>

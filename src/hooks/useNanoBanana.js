@@ -5,7 +5,7 @@ import { performSeedreamGeneration } from '@/lib/seedream';
 import { useAuth } from '@/contexts/AuthContext';
 
 const useNanoBanana = (initialImageUrl, photoId) => {
-    const { user, userProfile } = useAuth();
+    const { user, userProfile, refreshUserData } = useAuth();
     
     // Get credits from userProfile
     const credits = userProfile?.credits || 0;
@@ -24,7 +24,13 @@ const useNanoBanana = (initialImageUrl, photoId) => {
         
         try {
             const { databaseService } = await import('@/services/databaseService');
-            await databaseService.deductCredits(user.uid, amount);
+            await databaseService.deductCredits(amount, user.uid);
+            
+            // Refresh user data to update credits in UI
+            if (refreshUserData) {
+                await refreshUserData();
+            }
+            
             return true;
         } catch (error) {
             console.error('Error deducting credits:', error);
@@ -84,15 +90,21 @@ const useNanoBanana = (initialImageUrl, photoId) => {
                 console.log('Enhanced prompt with precise hotspot coordinates:', enhancedPrompt);
             }
             
-            const result = await performNanoBananaEdit(
-                enhancedPrompt, 
-                imageInputArray, 
-                params.outputFormat || 'jpg',
-                3, // retries
-                params.hotspot // pass hotspot coordinates
-            );
+            let result;
+            try {
+                result = await performNanoBananaEdit(
+                    enhancedPrompt, 
+                    imageInputArray, 
+                    params.outputFormat || 'jpg',
+                    3, // retries
+                    params.hotspot // pass hotspot coordinates
+                );
+            } catch (apiError) {
+                console.error('Nano Banana API call failed:', apiError);
+                result = { success: false, error: apiError.message };
+            }
             
-            if (!result.success || !result.imageUrl) {
+            if (!result || !result.success || !result.imageUrl) {
                 throw new Error("Nano Banana heeft geen geldig afbeeldingsresultaat teruggegeven.");
             }
 

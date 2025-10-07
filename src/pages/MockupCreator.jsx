@@ -19,6 +19,7 @@ import LoadingAnimation from '@/components/ui/loading-animation';
 import { getCategoryPromptSuggestions } from '@/lib/nano-banana';
 import { getAspectRatioOptions } from '@/lib/seedream';
 import ResolutionSelector from '@/components/ui/ResolutionSelector';
+import { autoSaveService } from '@/services/autoSaveService';
 
 const MockupCreator = () => {
   const { user } = useAuth();
@@ -289,12 +290,17 @@ const MockupCreator = () => {
         }
         
         // Use the hook's callNanoBananaApi for proper history management
-        await callNanoBananaApi(mockupPrompt, {
+        const editResult = await callNanoBananaApi(mockupPrompt, {
           additionalImages: additionalImages,
           toastMessage: selectedFiles.length > 0 
             ? `Mockup aanpassen met ${selectedFiles.length} nieuwe afbeelding${selectedFiles.length > 1 ? 'en' : ''}` 
             : "Mockup aanpassen met alleen tekst"
         });
+        
+        // Auto-save the edited mockup if successful
+        if (editResult && editResult.success && editResult.imageUrl) {
+          await autoSaveMockup(editResult.imageUrl, mockupPrompt);
+        }
         
         // Hide animation after completion
         setShowEditAnimation(false);
@@ -344,6 +350,9 @@ const MockupCreator = () => {
            setBaseGeneratedImage(result.imageUrl);
            setOriginalImages({...images});
            setIsEditingMode(true);
+           
+           // Auto-save the generated mockup
+           await autoSaveMockup(result.imageUrl, mockupPrompt);
            
            // Credits are automatically deducted in useNanoBanana
            
@@ -405,6 +414,33 @@ const MockupCreator = () => {
     });
   };
   
+  // Automatisch opslaan van gegenereerde mockup
+  const autoSaveMockup = async (imageUrl, mockupPrompt) => {
+    try {
+      const selectedCount = getSelectedImagesCount();
+      const photoData = {
+        imageUrl: imageUrl,
+        tool: 'mockup-creator',
+        prompt: mockupPrompt,
+        metadata: {
+          aspectRatio: aspectRatio,
+          resolution: resolution,
+          selectedImagesCount: selectedCount,
+          editingMode: isEditingMode
+        }
+      };
+
+      const result = await autoSaveService.autoSavePhoto(photoData);
+      
+      if (result && result.success) {
+        console.log('Mockup automatically saved:', result.firebaseUrl);
+      }
+    } catch (error) {
+      console.error('Auto-save error:', error);
+      // Don't show error toast for auto-save failures to avoid interrupting user flow
+    }
+  };
+
   const handleDownload = async () => {
     if (!generatedImage) return;
     

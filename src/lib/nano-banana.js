@@ -218,9 +218,9 @@ export const generateCategoryPrompt = (category, customPrompt = '') => {
     restaurant: {
       base: "Maak deze restaurantfoto geschikt voor menukaarten en marketing. Verbeter de presentatie, maak het eten aantrekkelijker en voeg een professionele uitstraling toe.",
       suggestions: [
-        "Transformeer deze foto tot een professionele menukaart afbeelding met perfecte food styling",
+        "Transformeer deze foto tot een professionele menukaart afbeelding met perfecte presentatie",
         "Verbeter de presentatie van dit gerecht voor restaurant marketing materiaal",
-        "Maak deze food foto geschikt voor sociale media met appetitelijke kleuren",
+        "Maak deze restaurant foto geschikt voor sociale media met appetitelijke kleuren",
         "Optimaliseer voor restaurant branding met warme, uitnodigende belichting"
       ]
     },
@@ -261,9 +261,9 @@ export const getCategoryPromptSuggestions = (category) => {
       "Creëer een premium vastgoed look met verbeterde contrast en helderheid"
     ],
     restaurant: [
-      "Transformeer deze foto tot een professionele menukaart afbeelding met perfecte food styling",
+      "Transformeer deze foto tot een professionele menukaart afbeelding met perfecte presentatie",
       "Verbeter de presentatie van dit gerecht voor restaurant marketing materiaal",
-      "Maak deze food foto geschikt voor sociale media met appetitelijke kleuren",
+      "Maak deze restaurant foto geschikt voor sociale media met appetitelijke kleuren",
       "Optimaliseer voor restaurant branding met warme, uitnodigende belichting"
     ],
     ecommerce: [

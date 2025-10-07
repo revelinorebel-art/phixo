@@ -15,8 +15,6 @@ import React, { useState } from 'react';
       const handleContinue = () => {
         if (selectedType === 'photo') {
           navigate('/upload-photos');
-        } else if (selectedType === 'food') {
-          navigate('/food-uploader');
         } else if (selectedType === 'mockup') {
           navigate('/mockup-creator');
         } else if (selectedType === 'foto-generator') {

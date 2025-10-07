@@ -24,6 +24,7 @@ import {
 // useAIApi removed - only using Replicate/Nano Banana
 import useNanoBanana from '@/hooks/useNanoBanana';
 import { uploadEditedPhoto } from '@/services/storageService';
+import { autoSaveService } from '@/services/autoSaveService';
 
 
 const PhotoEditor = () => {
@@ -212,45 +213,44 @@ const PhotoEditor = () => {
     }
   };
 
-  // Function to upload edited photo to Firebase Storage
+  // Function to upload edited photo to Firebase Storage using AutoSaveService
   const uploadEditedPhotoToStorage = async (imageUrl, editPrompt) => {
     try {
       setIsUploading(true);
       setUploadProgress(0);
       setUploadedToStorage(false);
 
-      // Convert image URL to blob
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-
-      // Create metadata for the edited photo
-      const metadata = {
-        originalPhotoId: photoId,
-        editPrompt: editPrompt,
-        editTimestamp: new Date().toISOString(),
-        originalFileName: photo?.name || 'unknown',
-        editType: 'ai_generated'
+      // Prepare photo data for AutoSaveService
+      const photoData = {
+        imageUrl: imageUrl,
+        tool: 'photo-optimization',
+        prompt: editPrompt,
+        metadata: {
+          originalPhotoId: photoId,
+          originalFileName: photo?.name || 'unknown',
+          editType: 'ai_generated',
+          aspectRatio: photoDimensions.aspectRatio || 'unknown',
+          resolution: `${photoDimensions.width}x${photoDimensions.height}` || 'unknown'
+        }
       };
 
-      // Upload to Firebase Storage
-      const uploadResult = await uploadEditedPhoto(blob, metadata, (progress) => {
+      // Use AutoSaveService for automatic saving
+      const result = await autoSaveService.autoSavePhoto(photoData, (progress) => {
         setUploadProgress(progress);
       });
 
-      if (uploadResult.success) {
+      if (result && result.success) {
         setUploadedToStorage(true);
-        toast({
-          title: "Foto opgeslagen! ☁️",
-          description: "Je bewerkte foto is automatisch opgeslagen in Firebase Storage.",
-          duration: 3000
-        });
         
         // Store the Firebase URL for future reference
         localStorage.setItem(`edited_photo_${photoId}_${Date.now()}`, JSON.stringify({
-          firebaseUrl: uploadResult.downloadURL,
-          metadata: uploadResult.metadata,
-          localUrl: imageUrl
+          firebaseUrl: result.firebaseUrl,
+          metadata: result.metadata,
+          localUrl: imageUrl,
+          autoSaved: true
         }));
+      } else {
+        throw new Error(result?.error || 'AutoSave failed');
       }
     } catch (error) {
       console.error('Error uploading to Firebase Storage:', error);

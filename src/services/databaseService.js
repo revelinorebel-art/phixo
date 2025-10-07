@@ -204,6 +204,98 @@ class DatabaseService {
     }
   }
 
+  // Delete image generation from database
+  async deleteImageGeneration(imageUrl, userId = null) {
+    try {
+      const user = userId || authService.getCurrentUser()?.uid;
+      if (!user) {
+        throw new Error('User must be authenticated');
+      }
+
+      console.log('🗄️ Searching for image generation to delete:', { imageUrl, userId: user });
+
+      // First try to find by imageUrl
+      let q = query(
+        collection(this.db, 'imageGenerations'),
+        where('userId', '==', user),
+        where('imageUrl', '==', imageUrl)
+      );
+
+      let querySnapshot = await getDocs(q);
+      
+      // If not found by imageUrl, try to find by imagePath
+      if (querySnapshot.empty) {
+        console.log('🔍 Not found by imageUrl, trying imagePath...');
+        q = query(
+          collection(this.db, 'imageGenerations'),
+          where('userId', '==', user),
+          where('imagePath', '==', imageUrl)
+        );
+        querySnapshot = await getDocs(q);
+      }
+
+      // If still not found, try partial URL matching
+      if (querySnapshot.empty) {
+        console.log('🔍 Not found by imagePath, trying partial URL matching...');
+        // Get all user's image generations and find by partial URL match
+        const allUserImages = query(
+          collection(this.db, 'imageGenerations'),
+          where('userId', '==', user)
+        );
+        const allSnapshot = await getDocs(allUserImages);
+        
+        const matchingDocs = [];
+        allSnapshot.forEach((doc) => {
+          const data = doc.data();
+          // Check if the imageUrl contains the search URL or vice versa
+          if (data.imageUrl && (data.imageUrl.includes(imageUrl) || imageUrl.includes(data.imageUrl))) {
+            matchingDocs.push(doc);
+          } else if (data.imagePath && (data.imagePath.includes(imageUrl) || imageUrl.includes(data.imagePath))) {
+            matchingDocs.push(doc);
+          }
+        });
+
+        if (matchingDocs.length > 0) {
+          console.log(`🎯 Found ${matchingDocs.length} matching documents by partial URL`);
+          // Delete matching documents
+          const deletePromises = matchingDocs.map(doc => deleteDoc(doc.ref));
+          await Promise.all(deletePromises);
+
+          return { 
+            success: true, 
+            deletedCount: matchingDocs.length,
+            message: `Deleted ${matchingDocs.length} image generation record(s) by partial URL match`
+          };
+        }
+      }
+      
+      if (querySnapshot.empty) {
+        console.warn('❌ No image generation found to delete for URL:', imageUrl);
+        return { success: true, message: 'No matching record found' };
+      }
+
+      console.log(`✅ Found ${querySnapshot.size} matching documents to delete`);
+
+      // Delete all matching documents (there should typically be only one)
+      const deletePromises = [];
+      querySnapshot.forEach((doc) => {
+        console.log('🗑️ Deleting document:', doc.id, doc.data());
+        deletePromises.push(deleteDoc(doc.ref));
+      });
+
+      await Promise.all(deletePromises);
+
+      return { 
+        success: true, 
+        deletedCount: querySnapshot.size,
+        message: `Deleted ${querySnapshot.size} image generation record(s)`
+      };
+    } catch (error) {
+      console.error('❌ Database delete error:', error);
+      throw new Error(`Failed to delete image generation: ${error.message}`);
+    }
+  }
+
   // Credit Transactions History
   async getCreditHistory(userId = null, limitCount = 50) {
     try {

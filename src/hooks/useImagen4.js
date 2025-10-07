@@ -7,7 +7,7 @@ const useImagen4 = () => {
   const [generatedImage, setGeneratedImage] = useState(null);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, refreshUserData } = useAuth();
 
   // Check if user has enough credits
   const checkCredits = async (amount) => {
@@ -23,7 +23,13 @@ const useImagen4 = () => {
     
     try {
       const { databaseService } = await import('@/services/databaseService');
-      await databaseService.deductCredits(user.uid, amount);
+      await databaseService.deductCredits(amount, user.uid);
+      
+      // Refresh user data to update credits in UI
+      if (refreshUserData) {
+        await refreshUserData();
+      }
+      
       return true;
     } catch (error) {
       console.error('Error deducting credits:', error);
@@ -136,6 +142,14 @@ const useImagen4 = () => {
     localStorage.removeItem('imagen4_history');
   }, []);
 
+  const removeFromHistory = useCallback((imageUrl) => {
+    console.log('🗑️ Removing from useImagen4 history:', imageUrl);
+    const updatedHistory = history.filter(item => item.imageUrl !== imageUrl);
+    setHistory(updatedHistory);
+    localStorage.setItem('imagen4_history', JSON.stringify(updatedHistory));
+    console.log('✅ Updated useImagen4 history, remaining items:', updatedHistory.length);
+  }, [history]);
+
   const loadHistory = useCallback(() => {
     try {
       const savedHistory = localStorage.getItem('imagen4_history');
@@ -155,6 +169,7 @@ const useImagen4 = () => {
     error,
     history,
     clearHistory,
+    removeFromHistory,
     loadHistory,
     credits: userProfile?.credits || 0
   };

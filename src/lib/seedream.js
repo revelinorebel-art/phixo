@@ -215,10 +215,6 @@ export const performSeedreamGeneration = async (prompt, aspectRatio = '4:3', ima
  */
 export const generateCategoryPrompt = (category, customPrompt = '') => {
   const categoryPrompts = {
-    foodfoto: {
-      prefix: "Professional food photography, high-quality, appetizing, perfect lighting, ",
-      suffix: ", food styling, restaurant quality, vibrant colors, shallow depth of field, gourmet presentation"
-    },
     restaurant: {
       prefix: "Restaurant menu photography, professional lighting, appetizing presentation, ",
       suffix: ", commercial food photography, high-end dining, elegant plating"
@@ -249,14 +245,6 @@ export const generateCategoryPrompt = (category, customPrompt = '') => {
  */
 export const getCategoryPromptSuggestions = (category) => {
   const suggestions = {
-    foodfoto: [
-      "Gourmet burger with crispy fries and perfect lighting",
-      "Fresh sushi platter with wasabi and ginger garnish",
-      "Artisanal pizza with melted cheese and fresh basil",
-      "Decadent chocolate dessert with berry garnish",
-      "Colorful salad bowl with vibrant vegetables and dressing"
-    ],
-
     restaurant: [
       "Gourmet steak with roasted vegetables and wine sauce",
       "Elegant seafood platter with lobster and oysters",

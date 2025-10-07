@@ -24,62 +24,28 @@ export const AuthProvider = ({ children }) => {
     return loggedOutValue === 'true';
   });
 
-  // Development mock user for testing
-  const isDevelopment = import.meta.env.DEV;
-  const mockUser = isDevelopment ? {
-    uid: 'mock-user-123',
-    email: 'test@phixo.nl',
-    displayName: 'Test User',
-    photoURL: null
-  } : null;
-
-  const mockUserProfile = isDevelopment ? {
-    uid: 'mock-user-123',
-    email: 'test@phixo.nl',
-    displayName: 'Test User',
-    credits: 100,
-    totalCreditsUsed: 0,
-    totalImagesGenerated: 0,
-    subscription: {
-      plan: 'pro',
-      status: 'active'
-    }
-  } : null;
-
   useEffect(() => {
     let unsubscribeUserData = null;
 
-    // In development mode, handle mock user logic
-    if (isDevelopment && mockUser) {
-      if (!isLoggedOut) {
-        setUser(mockUser);
-        setUserProfile(mockUserProfile);
-        setLoading(false);
-        return () => {}; // Return empty cleanup function
-      } else {
-        // User is logged out, clear user state
-        setUser(null);
-        setUserProfile(null);
-        setLoading(false);
-        return () => {}; // Return empty cleanup function
-      }
-    }
-
     // Subscribe to auth state changes
     const unsubscribeAuth = authService.onAuthStateChange(async (firebaseUser) => {
+      console.log('🔍 Auth state changed:', firebaseUser ? `User: ${firebaseUser.email}` : 'No user');
       setUser(firebaseUser);
       setError(null);
 
       if (firebaseUser) {
         try {
+          console.log('📊 Fetching user data for:', firebaseUser.email);
           // Get user data from Firestore
           const userDoc = await authService.getCurrentUserData();
+          console.log('📋 User document:', userDoc);
           setUserProfile(userDoc);
 
           // Subscribe to real-time user data updates
           unsubscribeUserData = databaseService.subscribeToUserData(
             firebaseUser.uid,
             (data) => {
+              console.log('🔄 Real-time user data update:', data);
               setUserProfile(data);
             }
           );
@@ -93,6 +59,7 @@ export const AuthProvider = ({ children }) => {
           });
         }
       } else {
+        console.log('👤 No user - clearing profile');
         setUserProfile(null);
         if (unsubscribeUserData) {
           unsubscribeUserData();
@@ -367,17 +334,7 @@ export const AuthProvider = ({ children }) => {
     clearError: () => setError(null)
   };
 
-  // Development helper - expose logout function to window for testing
-  if (isDevelopment) {
-    window.testLogout = logout;
-    window.testAuthState = () => {
-      console.log('🔍 Current Auth State:', {
-        user: !!user,
-        isLoggedOut,
-        localStorage: localStorage.getItem('phixo_logged_out')
-      });
-    };
-  }
+
 
   return (
     <AuthContext.Provider value={value}>

@@ -45,32 +45,7 @@ const LandingPage = () => {
       ]
     },
 
-    {
-      id: 'foodbloggers',
-      title: 'Foodbloggers',
-      icon: Utensils,
-      description: 'Maak je gerechten onweerstaanbaar met professionele food fotografie',
-      beforeImage: '/images/Foodblogger 1 Voor.png',
-      afterImage: '/images/Foodblogger 1 na.png',
-      improvement: '+85% engagement',
-      examples: [
-        {
-          before: '/images/Foodblogger 1 Voor.png',
-          after: '/images/Foodblogger 1 na.png',
-          title: 'Signature Dish'
-        },
-        {
-          before: '/images/Foodblogger 2 Voor.png',
-          after: '/images/Foodblogger 2 na.png',
-          title: 'Dessert Special'
-        },
-        {
-          before: '/images/Foodblogger 3 Voor.png',
-          after: '/images/Foodblogger 3 NA.jpg',
-          title: 'Appetizer Plating'
-        }
-      ]
-    },
+
     {
       id: 'marktplaats',
       title: 'Marktplaats/Amazon',
@@ -164,13 +139,13 @@ const LandingPage = () => {
           title: 'Brand Mockups'
         },
         {
-          before: '/images/before-food.svg',
-          after: '/images/after-food.svg',
+          before: '/images/horloge-voor-placeholder.svg',
+          after: '/images/horloge-na-placeholder.svg',
           title: 'Packaging Design'
         },
         {
-          before: '/images/biefstuk-voor-placeholder.svg',
-          after: '/images/biefstuk-na-placeholder.svg',
+          before: '/images/horloge-voor-placeholder.svg',
+          after: '/images/horloge-na-placeholder.svg',
           title: 'Marketing Materials'
         }
       ]

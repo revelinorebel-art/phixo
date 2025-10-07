@@ -15,8 +15,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
     import PhotoUploader from '@/pages/PhotoUploader';
 import FotoGenerator from '@/pages/FotoGenerator';
 import PhotoEditor from '@/pages/PhotoEditor';
-import FoodUploader from '@/pages/FoodUploader';
-import FoodEditor from '@/pages/FoodEditor';
+
 import MockupCreator from '@/pages/MockupCreator';
 import MockupTutorial from '@/pages/MockupTutorial';
 import RetouchTools from '@/pages/RetouchTools';
@@ -63,9 +62,9 @@ import LandingPage from '@/pages/LandingPage';
         <Router>
           <Helmet>
             <title>Phixo - AI-Powered Photo Transformation</title>
-            <meta name="description" content="Transform your photos with AI-powered optimization for e-commerce, food photography, and real estate. Professional photo enhancement and ad creation made simple with Phixo." />
+            <meta name="description" content="Transform your photos with AI-powered optimization for e-commerce and real estate. Professional photo enhancement and ad creation made simple with Phixo." />
             <meta property="og:title" content="Phixo - AI-Powered Photo Transformation" />
-            <meta property="og:description" content="Transform your photos with AI-powered optimization for e-commerce, food photography, and real estate. Professional photo enhancement and ad creation made simple with Phixo." />
+            <meta property="og:description" content="Transform your photos with AI-powered optimization for e-commerce and real estate. Professional photo enhancement and ad creation made simple with Phixo." />
           </Helmet>
           
           <div className="min-h-screen">
@@ -86,8 +85,7 @@ import LandingPage from '@/pages/LandingPage';
               <Route path="/new-project" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
               <Route path="/upload-photos" element={<ProtectedRoute><PhotoUploader /></ProtectedRoute>} />
               <Route path="/foto-generator" element={<ProtectedRoute><FotoGenerator /></ProtectedRoute>} />
-              <Route path="/food-uploader" element={<ProtectedRoute><FoodUploader /></ProtectedRoute>} />
-              <Route path="/edit-food-photo/:photoId" element={<ProtectedRoute><FoodEditor /></ProtectedRoute>} />
+
               <Route path="/edit-photo/:photoId" element={<ProtectedRoute><PhotoEditor /></ProtectedRoute>} />
 
               <Route path="/mockup-creator" element={<ProtectedRoute><MockupCreator /></ProtectedRoute>} />
