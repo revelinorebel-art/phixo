@@ -41,14 +41,29 @@ export const AuthProvider = ({ children }) => {
           console.log('📋 User document:', userDoc);
           setUserProfile(userDoc);
 
-          // Subscribe to real-time user data updates
-          unsubscribeUserData = databaseService.subscribeToUserData(
-            firebaseUser.uid,
-            (data) => {
-              console.log('🔄 Real-time user data update:', data);
-              setUserProfile(data);
-            }
-          );
+          // Subscribe to real-time user data updates with enhanced error handling
+          try {
+            unsubscribeUserData = databaseService.subscribeToUserData(
+              firebaseUser.uid,
+              (data) => {
+                if (data) {
+                  console.log('🔄 Real-time user data update:', data);
+                  setUserProfile(data);
+                } else {
+                  console.warn('⚠️ Received null user data from listener');
+                }
+              }
+            );
+            console.log('✅ Real-time user data listener established');
+          } catch (listenerError) {
+            console.error('❌ Failed to establish real-time listener:', listenerError);
+            // Fallback: just use the initial user data without real-time updates
+            toast({
+              title: "Waarschuwing",
+              description: "Real-time updates zijn tijdelijk niet beschikbaar",
+              variant: "default"
+            });
+          }
         } catch (error) {
           console.error('Error fetching user data:', error);
           setError(error.message);

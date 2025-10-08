@@ -1,13 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { connectionMonitor } from '@/utils/connectionMonitor';
     import Login from '@/pages/Login';
     import Register from '@/pages/Register';
     import ForgotPassword from '@/pages/ForgotPassword';
     import Dashboard from '@/pages/Dashboard';
-    import MyPhotos from '@/pages/MyPhotos';
     import MyAds from '@/pages/MyAds';
     import Subscription from '@/pages/Subscription';
     import Settings from '@/pages/Settings';
@@ -24,7 +24,7 @@ import LandingPage from '@/pages/LandingPage';
 
     // Protected Route Component
     const ProtectedRoute = ({ children }) => {
-      const { user, loading } = useAuth();
+      const { user, loading, isAuthenticated } = useAuth();
       
       if (loading) {
         return <div className="flex items-center justify-center min-h-screen">
@@ -32,7 +32,10 @@ import LandingPage from '@/pages/LandingPage';
         </div>;
       }
       
-      if (!user) {
+      // Check if user is logged out or not authenticated
+      const isLoggedOut = localStorage.getItem('phixo_logged_out') === 'true';
+      
+      if (!user || !isAuthenticated || isLoggedOut) {
         return <Navigate to="/login" replace />;
       }
       
@@ -41,7 +44,7 @@ import LandingPage from '@/pages/LandingPage';
     
     // Public Route Component (redirects to dashboard if logged in)
     const PublicRoute = ({ children }) => {
-      const { user, loading } = useAuth();
+      const { user, loading, isAuthenticated } = useAuth();
       
       if (loading) {
         return <div className="flex items-center justify-center min-h-screen">
@@ -49,7 +52,10 @@ import LandingPage from '@/pages/LandingPage';
         </div>;
       }
       
-      if (user) {
+      // Only redirect to dashboard if user is truly authenticated and not logged out
+      const isLoggedOut = localStorage.getItem('phixo_logged_out') === 'true';
+      
+      if (user && isAuthenticated && !isLoggedOut) {
         return <Navigate to="/dashboard" replace />;
       }
       
@@ -57,6 +63,24 @@ import LandingPage from '@/pages/LandingPage';
     };
 
     function App() {
+      useEffect(() => {
+        // Initialize connection monitoring
+        console.log('🚀 Initializing Phixo with connection monitoring...');
+        
+        // Subscribe to connection changes for debugging
+        const unsubscribe = connectionMonitor.onConnectionChange((state) => {
+          console.log(`🔄 Connection state changed: ${state}`);
+        });
+        
+        // Log initial connection state
+        const initialState = connectionMonitor.getConnectionState();
+        console.log('📊 Initial connection state:', initialState);
+        
+        return () => {
+          unsubscribe();
+        };
+      }, []);
+      
     return (
       <AuthProvider>
         <Router>
@@ -77,7 +101,6 @@ import LandingPage from '@/pages/LandingPage';
               
               {/* Protected Routes */}
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/my-photos" element={<ProtectedRoute><MyPhotos /></ProtectedRoute>} />
               <Route path="/tutorial" element={<ProtectedRoute><Tutorial /></ProtectedRoute>} />
               <Route path="/my-ads" element={<ProtectedRoute><MyAds /></ProtectedRoute>} />
               <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { Link, useNavigate } from 'react-router-dom';
-import { Layers, Sparkles, ArrowLeft, FileUp, Wand2, Lightbulb, Download, BookOpen, Loader2, X, RefreshCw, Edit3, Undo, Redo } from 'lucide-react';
+import { Layers, Sparkles, ArrowLeft, FileUp, Wand2, Lightbulb, Download, BookOpen, Loader2, X, RefreshCw, Edit3, Undo, Redo, Image } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 import useNanoBanana from '@/hooks/useNanoBanana';
@@ -59,6 +59,11 @@ const MockupCreator = () => {
   
   // Drag & Drop state
   const [draggedOver, setDraggedOver] = useState(null);
+  
+  // Recent photos state
+  const [recentPhotos, setRecentPhotos] = useState([]);
+  const [loadingRecentPhotos, setLoadingRecentPhotos] = useState(false);
+  const [draggedPhoto, setDraggedPhoto] = useState(null);
 
   // Get uploaded images count
   const getUploadedImagesCount = () => {
@@ -82,6 +87,34 @@ const MockupCreator = () => {
     const firstImage = Object.values(images).find(img => img.preview !== null);
     return firstImage ? firstImage.preview : null;
   };
+
+  // Load recent photos from autoSaveService
+  const loadRecentPhotos = async () => {
+    if (!user) {
+      setRecentPhotos([]);
+      return;
+    }
+
+    try {
+      setLoadingRecentPhotos(true);
+      console.log('🔄 MockupCreator: Loading recent photos...');
+      
+      const photos = await autoSaveService.getRecentPhotos(8); // Load 8 recent photos
+      console.log('✅ MockupCreator: Loaded photos:', photos.length);
+      
+      setRecentPhotos(photos);
+    } catch (error) {
+      console.error('❌ MockupCreator: Error loading recent photos:', error);
+      setRecentPhotos([]);
+    } finally {
+      setLoadingRecentPhotos(false);
+    }
+  };
+
+  // Load recent photos when component mounts or user changes
+  useEffect(() => {
+    loadRecentPhotos();
+  }, [user]);
 
   // Handle file upload for specific image slot
   const handleFileChange = (event, imageKey) => {
@@ -141,15 +174,394 @@ const MockupCreator = () => {
     }
   };
 
-  const handleDrop = (e, imageKey) => {
+  const handleDrop = async (e, imageKey) => {
     e.preventDefault();
     e.stopPropagation();
     setDraggedOver(null);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
+    try {
+      // Check if it's a photo being dragged from recent photos
+      if (draggedPhoto) {
+        console.log('🔄 Dropping recent photo:', draggedPhoto.name);
+        
+        // Validate photo data
+        if (!draggedPhoto.url) {
+          throw new Error('Foto URL ontbreekt');
+        }
+        
+        await processPhotoFromUrl(draggedPhoto.url, imageKey);
+        setDraggedPhoto(null);
+        return;
+      }
+
+      // Handle file drop
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) {
+        toast({
+          title: "Geen bestanden gevonden",
+          description: "Sleep een afbeelding naar dit gebied.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (files.length > 1) {
+        toast({
+          title: "Te veel bestanden",
+          description: "Sleep slechts één afbeelding tegelijk.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const file = files[0];
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Ongeldig bestandstype",
+          description: "Sleep alleen afbeeldingen (JPG, PNG, etc.).",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      console.log('🔄 Processing dropped file:', file.name);
       processFile(file, imageKey);
+      
+    } catch (error) {
+      console.error('❌ Error in handleDrop:', error);
+      toast({
+        title: "Fout bij slepen",
+        description: error.message || "Er is een fout opgetreden bij het slepen van de foto.",
+        variant: "destructive"
+      });
+      
+      // Clean up drag state
+      setDraggedPhoto(null);
+    }
+  };
+
+  // Handle drag start for recent photos
+  const handlePhotoDragStart = (e, photo) => {
+    try {
+      console.log('🔄 Starting drag for photo:', photo.name);
+      
+      // Validate photo data
+      if (!photo || !photo.url) {
+        console.error('❌ Invalid photo data for drag:', photo);
+        toast({
+          title: "Fout bij slepen",
+          description: "Deze foto kan niet gesleept worden.",
+          variant: "destructive"
+        });
+        e.preventDefault();
+        return;
+      }
+      
+      setDraggedPhoto(photo);
+      e.dataTransfer.effectAllowed = 'copy';
+      
+      // Add visual feedback
+      e.target.style.opacity = '0.7';
+      
+    } catch (error) {
+      console.error('❌ Error in handlePhotoDragStart:', error);
+      e.preventDefault();
+    }
+  };
+
+  const handlePhotoDragEnd = (e) => {
+    try {
+      console.log('🔄 Ending drag operation');
+      setDraggedPhoto(null);
+      
+      // Reset visual feedback
+      if (e && e.target) {
+        e.target.style.opacity = '1';
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in handlePhotoDragEnd:', error);
+      // Always clean up drag state even if there's an error
+      setDraggedPhoto(null);
+    }
+  };
+
+  // Process photo from URL (for drag & drop from recent photos)
+  const processPhotoFromUrl = async (photoUrl, imageKey) => {
+    try {
+      console.log('🔄 Processing photo from URL:', photoUrl);
+      
+      let response;
+      let blob;
+      
+      // For Firebase Storage URLs, use our proxy server to avoid CORS issues
+      if (photoUrl.includes('firebasestorage.googleapis.com')) {
+        console.log('🔄 Detected Firebase Storage URL, using proxy...');
+        try {
+          const proxyUrl = `http://localhost:3001/api/fetch-image?url=${encodeURIComponent(photoUrl)}`;
+          response = await fetch(proxyUrl);
+          
+          if (response.ok) {
+            blob = await response.blob();
+            
+            // Validate blob size and type
+            if (blob.size === 0) {
+              throw new Error('Proxy returned empty image data');
+            }
+            
+            if (!blob.type.startsWith('image/')) {
+              console.warn('⚠️ Proxy returned non-image content type:', blob.type);
+              // Still proceed as it might be a valid image
+            }
+            
+            console.log('✅ Firebase proxy fetch successful:', blob.size, 'bytes, type:', blob.type);
+          } else {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            throw new Error(`Proxy server error (${response.status}): ${errorText}`);
+          }
+        } catch (proxyError) {
+          console.error('❌ Firebase Storage proxy fetch failed:', proxyError.message);
+          
+          // Show specific error message for proxy issues
+          toast({
+            title: "Proxy server probleem",
+            description: `Kan Firebase Storage afbeelding niet ophalen via proxy: ${proxyError.message}`,
+            variant: "destructive"
+          });
+          
+          throw proxyError; // Re-throw to trigger fallback
+        }
+      } else {
+        // For other URLs, try direct fetch first
+        try {
+          response = await fetch(photoUrl, {
+            mode: 'cors',
+            credentials: 'omit'
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          blob = await response.blob();
+          
+          // Validate blob
+          if (blob.size === 0) {
+            throw new Error('Received empty image data');
+          }
+          
+          if (!blob.type.startsWith('image/')) {
+            console.warn('⚠️ Non-image content type received:', blob.type);
+          }
+          
+          console.log('✅ Direct fetch successful:', blob.size, 'bytes, type:', blob.type);
+          
+        } catch (fetchError) {
+          console.error('❌ Direct fetch failed:', fetchError.message);
+          
+          // Check if it's a CORS error
+          if (fetchError.name === 'TypeError' && fetchError.message.includes('CORS')) {
+            toast({
+              title: "CORS probleem",
+              description: "Kan afbeelding niet laden vanwege CORS-beperkingen. Probeer de afbeelding eerst te downloaden.",
+              variant: "destructive"
+            });
+          } else {
+            toast({
+              title: "Afbeelding laden mislukt",
+              description: `Kan afbeelding niet ophalen: ${fetchError.message}`,
+              variant: "destructive"
+            });
+          }
+          
+          throw fetchError;
+        }
+      }
+      
+      // Create a File object from the blob
+      const file = new File([blob], 'recent-photo.jpg', { 
+        type: blob.type || 'image/jpeg',
+        lastModified: Date.now()
+      });
+      
+      console.log('✅ Created file from blob:', file.size, 'bytes');
+      
+      // For Firebase Storage URLs, set the preview to use the proxy URL
+      const previewUrl = photoUrl.includes('firebasestorage.googleapis.com') 
+        ? `http://localhost:3001/api/fetch-image?url=${encodeURIComponent(photoUrl)}`
+        : URL.createObjectURL(blob);
+      
+      // Set the image with the correct preview URL
+      setImages(prev => ({
+        ...prev,
+        [imageKey]: {
+          file: file,
+          preview: previewUrl,
+          selected: prev[imageKey].selected
+        }
+      }));
+      
+      toast({
+        title: "Foto toegevoegd",
+        description: "Recente foto is succesvol toegevoegd aan de upload area.",
+      });
+      
+    } catch (error) {
+      console.error('❌ Error processing photo from URL:', error);
+      
+      // Don't show duplicate toast if we already showed one for specific errors
+      const isSpecificError = error.message.includes('Proxy server error') || 
+                             error.message.includes('HTTP') ||
+                             error.message.includes('CORS');
+      
+      if (!isSpecificError) {
+        toast({
+          title: "Foto verwerking mislukt",
+          description: `Kan foto niet verwerken: ${error.message}`,
+          variant: "destructive"
+        });
+      }
+      
+      // Fallback: try canvas-based approach for CORS-protected images
+      try {
+        console.log('🔄 Trying canvas fallback method...');
+        
+        // Create an image element to load the photo
+        const img = document.createElement('img');
+        img.crossOrigin = 'anonymous'; // Enable CORS
+        
+        // Create a promise to handle image loading
+        const imageLoadPromise = new Promise((resolve, reject) => {
+          img.onload = () => {
+            try {
+              console.log('✅ Image loaded for canvas:', img.naturalWidth, 'x', img.naturalHeight);
+              
+              // Create a canvas to convert the image to blob
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              
+              // Set canvas dimensions to match image
+              canvas.width = img.naturalWidth || img.width;
+              canvas.height = img.naturalHeight || img.height;
+              
+              // Draw the image on canvas
+              ctx.drawImage(img, 0, 0);
+              
+              // Convert canvas to blob
+              canvas.toBlob((blob) => {
+                if (blob && blob.size > 0) {
+                  console.log('✅ Canvas conversion successful:', blob.size, 'bytes');
+                  resolve(blob);
+                } else {
+                  reject(new Error('Failed to convert image to blob or blob is empty'));
+                }
+              }, 'image/jpeg', 0.9);
+            } catch (canvasError) {
+              console.error('Canvas processing error:', canvasError);
+              reject(canvasError);
+            }
+          };
+          
+          img.onerror = (error) => {
+            console.error('Image load error:', error);
+            reject(new Error('Failed to load image from URL'));
+          };
+        });
+        
+        // Start loading the image
+        img.src = photoUrl;
+        
+        // Wait for the image to load and convert to blob
+        const blob = await imageLoadPromise;
+        
+        // Create a File object from the blob
+        const file = new File([blob], 'recent-photo.jpg', { type: 'image/jpeg' });
+        
+        // For Firebase Storage URLs, set the preview to use the proxy URL
+        const previewUrl = photoUrl.includes('firebasestorage.googleapis.com') 
+          ? `http://localhost:3001/api/fetch-image?url=${encodeURIComponent(photoUrl)}`
+          : URL.createObjectURL(blob);
+        
+        // Set the image with the correct preview URL
+        setImages(prev => ({
+          ...prev,
+          [imageKey]: {
+            file: file,
+            preview: previewUrl,
+            selected: prev[imageKey].selected
+          }
+        }));
+        
+        toast({
+          title: "Foto toegevoegd",
+          description: "Recente foto is succesvol toegevoegd aan de upload area.",
+        });
+        
+      } catch (fallbackError) {
+        console.error('❌ Canvas fallback method also failed:', fallbackError);
+        
+        toast({
+          title: "Canvas fallback mislukt",
+          description: `Canvas methode werkte niet: ${fallbackError.message}. Probeer de afbeelding handmatig te uploaden.`,
+          variant: "destructive"
+        });
+        
+        // Final fallback: Create a placeholder file that can be processed by FileReader
+        try {
+          console.log('🔄 Creating placeholder file as final fallback...');
+          
+          // Create a minimal 100x100 pixel placeholder image
+          const canvas = document.createElement('canvas');
+          canvas.width = 100;
+          canvas.height = 100;
+          const ctx = canvas.getContext('2d');
+          
+          // Create a simple placeholder design
+          ctx.fillStyle = '#f0f0f0';
+          ctx.fillRect(0, 0, 100, 100);
+          ctx.fillStyle = '#666';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('Image', 50, 45);
+          ctx.fillText('Loading', 50, 60);
+          
+          const placeholderBlob = await new Promise(resolve => {
+            canvas.toBlob(resolve, 'image/jpeg', 0.9);
+          });
+          
+          const file = new File([placeholderBlob], 'recent-photo.jpg', { type: 'image/jpeg' });
+          
+          // Set the image with proxied URL for preview if it's a Firebase Storage URL
+          const previewUrl = photoUrl.includes('firebasestorage.googleapis.com') 
+            ? `http://localhost:3001/api/fetch-image?url=${encodeURIComponent(photoUrl)}`
+            : photoUrl;
+          
+          setImages(prev => ({
+            ...prev,
+            [imageKey]: {
+              file: file,
+              preview: previewUrl, // Use proxied URL for Firebase Storage
+              selected: false
+            }
+          }));
+          
+          toast({
+            title: "Foto toegevoegd",
+            description: "Recente foto is toegevoegd (preview mode). De originele afbeelding wordt getoond maar een placeholder wordt gebruikt voor bewerking.",
+            variant: "default"
+          });
+          
+        } catch (finalError) {
+          console.error('All fallback methods failed:', finalError);
+          toast({
+            title: "Fout bij toevoegen foto",
+            description: "Kon de foto niet toevoegen. Probeer het opnieuw of upload de foto handmatig.",
+            variant: "destructive"
+          });
+        }
+      }
     }
   };
 
@@ -278,15 +690,38 @@ const MockupCreator = () => {
         // Convert selected files to data URLs for Nano Banana
         const additionalImages = [];
         if (selectedFiles.length > 0) {
-          const imageDataUrls = await Promise.all(selectedFiles.map(file => {
-            return new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            });
-          }));
-          additionalImages.push(...imageDataUrls);
+          // Filter out invalid files and validate before processing
+          const validFiles = selectedFiles.filter(file => {
+            if (!file) {
+              console.warn('Skipping null/undefined file');
+              return false;
+            }
+            if (!(file instanceof File) && !(file instanceof Blob)) {
+              console.warn('Skipping invalid file object:', file);
+              return false;
+            }
+            return true;
+          });
+          
+          if (validFiles.length > 0) {
+            const imageDataUrls = await Promise.all(validFiles.map(file => {
+              return new Promise((resolve, reject) => {
+                try {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result);
+                  reader.onerror = (error) => {
+                    console.error('FileReader error:', error);
+                    reject(error);
+                  };
+                  reader.readAsDataURL(file);
+                } catch (error) {
+                  console.error('Error creating FileReader:', error);
+                  reject(error);
+                }
+              });
+            }));
+            additionalImages.push(...imageDataUrls);
+          }
         }
         
         // Use the hook's callNanoBananaApi for proper history management
@@ -321,14 +756,36 @@ const MockupCreator = () => {
            const uploadedFiles = getUploadedFiles();
            
            // Convert all uploaded images to data URLs (if any)
-         const imageDataUrls = uploadedFiles.length > 0 ? await Promise.all(uploadedFiles.map(file => {
-           return new Promise((resolve, reject) => {
-             const reader = new FileReader();
-             reader.onload = () => resolve(reader.result);
-             reader.onerror = reject;
-             reader.readAsDataURL(file);
-           });
-         })) : [];
+         const imageDataUrls = uploadedFiles.length > 0 ? await Promise.all(
+           uploadedFiles
+             .filter(file => {
+               if (!file) {
+                 console.warn('Skipping null/undefined file');
+                 return false;
+               }
+               if (!(file instanceof File) && !(file instanceof Blob)) {
+                 console.warn('Skipping invalid file object:', file);
+                 return false;
+               }
+               return true;
+             })
+             .map(file => {
+               return new Promise((resolve, reject) => {
+                 try {
+                   const reader = new FileReader();
+                   reader.onload = () => resolve(reader.result);
+                   reader.onerror = (error) => {
+                     console.error('FileReader error:', error);
+                     reject(error);
+                   };
+                   reader.readAsDataURL(file);
+                 } catch (error) {
+                   console.error('Error creating FileReader:', error);
+                   reject(error);
+                 }
+               });
+             })
+         ) : [];
          
          console.log(`Verwerken van ${imageDataUrls.length} afbeeldingen voor mockup generatie (alleen-tekst: ${imageDataUrls.length === 0})`);
            
@@ -880,6 +1337,80 @@ const MockupCreator = () => {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Recent Photos Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              className="mt-8"
+            >
+              <Card className="glass-effect border-white/10">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Image className="w-5 h-5 text-purple-400" />
+                    Recente Foto's
+                  </CardTitle>
+                  <CardDescription>
+                    Sleep foto's naar de upload gebieden om ze te gebruiken in je mockup
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingRecentPhotos ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-white/50 mr-2" />
+                      <span className="text-white/60">Foto's laden...</span>
+                    </div>
+                  ) : recentPhotos.length > 0 ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                      {recentPhotos.map((photo) => (
+                        <motion.div
+                          key={photo.id}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="relative group cursor-grab active:cursor-grabbing"
+                          draggable
+                          onDragStart={(e) => handlePhotoDragStart(e, photo)}
+                          onDragEnd={handlePhotoDragEnd}
+                        >
+                          <div className="relative overflow-hidden rounded-lg bg-gray-900/50 aspect-square">
+                            <img
+                              src={photo.url}
+                              alt={photo.name}
+                              className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="absolute bottom-2 left-2 right-2">
+                                <p className="text-white text-xs font-medium truncate">
+                                  {photo.name}
+                                </p>
+                                <p className="text-white/70 text-xs">
+                                  {new Date(photo.createdAt).toLocaleDateString('nl-NL')}
+                                </p>
+                              </div>
+                            </div>
+                            {/* Drag indicator */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="bg-purple-500 text-white text-xs px-2 py-1 rounded-full">
+                                Sleep
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Image className="w-12 h-12 mx-auto mb-4 text-white/30" />
+                      <p className="text-white/60 mb-2">Geen recente foto's gevonden</p>
+                      <p className="text-white/40 text-sm">
+                        Bewerk eerst foto's in andere tools om ze hier te zien verschijnen
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
           </motion.div>
         </main>
       </div>

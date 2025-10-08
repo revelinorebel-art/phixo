@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "proxy": "node proxy-server.js",
+    "dev:full": "concurrently \"npm run proxy\" \"npm run dev\""
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.0.5",
@@ -27,10 +29,12 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "firebase": "^10.14.1",
     "framer-motion": "^10.16.4",
     "lucide-react": "^0.285.0",
+    "node-fetch": "^3.3.2",
     "react": "^18.2.0",
     "react-compare-slider": "^3.0.1",
     "react-dom": "^18.2.0",
@@ -47,6 +51,7 @@
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^4.0.3",
     "autoprefixer": "^10.4.16",
+    "concurrently": "^9.2.1",
     "eslint": "^8.57.1",
     "eslint-config-react-app": "^7.0.1",
     "postcss": "^8.4.31",

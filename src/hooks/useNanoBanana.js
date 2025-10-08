@@ -44,9 +44,13 @@ const useNanoBanana = (initialImageUrl, photoId) => {
     const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
 
     useEffect(() => {
+        console.log('🔄 useNanoBanana: initialImageUrl changed:', initialImageUrl);
         if (initialImageUrl) {
             setHistory([initialImageUrl]);
             setCurrentHistoryIndex(0);
+            console.log('✅ useNanoBanana: History initialized with:', initialImageUrl);
+        } else {
+            console.log('⚠️ useNanoBanana: No initialImageUrl provided');
         }
     }, [initialImageUrl]);
 
@@ -214,7 +218,7 @@ const useNanoBanana = (initialImageUrl, photoId) => {
         redo,
         canUndo,
         canRedo,
-        originalImageUrl: history[0],
+        originalImageUrl: history[0] || initialImageUrl,
         credits,
     };
 };

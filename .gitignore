@@ -101,3 +101,32 @@ src/contexts/CreditsContext.backup.jsx
 # API keys and sensitive data (double check these are not committed)
 **/config/keys.js
 **/config/secrets.js
+
+# Additional security patterns
+*.key
+*.pem
+*.p12
+*.pfx
+*secret*
+*private*
+*credentials*
+.env.*
+!.env.example
+.firebase/
+.firebaserc
+
+# Sensitive configuration files
+config/production.js
+config/staging.js
+src/config/keys.js
+src/config/secrets.js
+
+# Database dumps and backups
+*.sql
+*.dump
+*.backup
+
+# Logs with potential sensitive data
+*.log.*
+logs/
+log/

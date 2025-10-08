@@ -127,14 +127,14 @@ const RetouchTools = () => {
         URL.revokeObjectURL(blobUrl); // Maak geheugen vrij
       }, 100);
       
-      // Sla de foto ook op in Mijn Foto's
-      if (photo) {
-        saveToMyPhotos();
+      // Sla de foto automatisch op
+      if (photo && currentImage && currentImage !== photo.url) {
+        await saveRetouchedPhoto(currentImage, 'Download bewerkte foto', 'download');
       }
       
       toast({
         title: "Foto gedownload! 📥",
-        description: "De bewerkte foto is gedownload en opgeslagen in Mijn Foto's.",
+        description: "De bewerkte foto is gedownload en automatisch opgeslagen.",
       });
     } catch (error) {
       console.error('Download error:', error);
@@ -177,33 +177,17 @@ const RetouchTools = () => {
     }
   };
 
-  // Functie om bewerking op te slaan in Mijn Foto's (behouden voor compatibiliteit)
-  const saveToMyPhotos = async () => {
-    if (!currentImage || currentImage === photo?.url) return;
+  // Functie om bewerking op te slaan (gebruikt autoSaveService)
+  const saveRetouchedPhoto = async (imageUrl, prompt, editType = 'manual') => {
+    if (!imageUrl || imageUrl === photo?.url) return;
     
     try {
-      // Genereer unieke ID
-      const photoId = `retouch-${Date.now()}`;
-      
-      // Haal bestaande foto's op uit localStorage
-      const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
-      
-      // Voeg nieuwe foto toe
-      const newPhoto = {
-        id: photoId,
-        name: `Bewerkte foto ${new Date().toLocaleDateString()}`,
-        url: currentImage,
-        category: 'retouch',
-        createdAt: new Date().toISOString(),
-        prompt: retouchPrompt || 'Foto bewerking'
-      };
-      
-      // Sla op in localStorage
-      localStorage.setItem('myPhotos', JSON.stringify([...savedPhotos, newPhoto]));
+      // Auto-save via service (Firebase Storage + database)
+      await autoSaveRetouchedPhoto(imageUrl, prompt, editType);
       
       toast({
         title: "Foto opgeslagen! 📸",
-        description: "Je bewerkte foto is opgeslagen in Mijn Foto's.",
+        description: "Je bewerkte foto is automatisch opgeslagen.",
       });
     } catch (error) {
       console.error('Error saving photo:', error);
@@ -239,7 +223,6 @@ const RetouchTools = () => {
       // Als de filter succesvol is toegepast, automatisch opslaan
       if (result && result.success && result.imageUrl) {
         await autoSaveRetouchedPhoto(result.imageUrl, prompt, 'filter');
-        saveToMyPhotos();
       }
     } catch (error) {
       console.error('Error applying filter:', error);
@@ -275,7 +258,6 @@ const RetouchTools = () => {
       // Als de aanpassing succesvol is toegepast, automatisch opslaan
       if (result && result.success && result.imageUrl) {
         await autoSaveRetouchedPhoto(result.imageUrl, prompt, 'adjustment');
-        saveToMyPhotos();
       }
     } catch (error) {
       console.error('Error applying adjustment:', error);
@@ -481,9 +463,6 @@ const RetouchTools = () => {
         }
         
         setRetouchPrompt('');
-        
-        // Sla de bewerking ook op in localStorage voor compatibiliteit
-        saveToMyPhotos();
       }
     } catch (error) {
       console.error('Error applying retouch:', error);

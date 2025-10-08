@@ -29,7 +29,6 @@ const Sidebar = () => {
 
       const navigationItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-        { name: 'Mijn Foto\'s', href: '/my-photos', icon: Image },
         { name: 'Tutorial', href: '/tutorial', icon: BookOpen },
         { name: 'Abonnement/Credits', href: '/subscription', icon: CreditCard },
         { name: 'Instellingen', href: '/settings', icon: Settings },

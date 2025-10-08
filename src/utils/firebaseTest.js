@@ -1,5 +1,6 @@
-import { storage } from '../lib/firebase';
+import { storage, db } from '../lib/firebase.js';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { authService } from '../services/authService';
 
 /**
@@ -113,4 +114,63 @@ export const testImageUpload = async () => {
       message: 'Firebase Storage image upload failed'
     };
   }
+};
+
+export const testFirestoreConnection = async () => {
+  try {
+    if (!db) {
+      throw new Error('Firestore is not initialized');
+    }
+
+    // Test document reference
+    const testDocRef = doc(db, 'test', 'connection-test');
+    
+    // Write test data
+    const testData = {
+      message: 'Hello Firestore!',
+      timestamp: new Date(),
+      test: true
+    };
+    
+    await setDoc(testDocRef, testData);
+    console.log('✅ Firestore write successful!');
+    
+    // Read test data
+    const docSnap = await getDoc(testDocRef);
+    
+    if (docSnap.exists()) {
+      console.log('✅ Firestore read successful!');
+      console.log('Test data:', docSnap.data());
+      
+      // Clean up test document
+      await deleteDoc(testDocRef);
+      console.log('✅ Firestore cleanup successful!');
+      
+      return { success: true, data: docSnap.data() };
+    } else {
+      throw new Error('Test document not found after write');
+    }
+  } catch (error) {
+    console.error('❌ Firestore connection failed:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const testAllFirebaseServices = async () => {
+  console.log('🔍 Testing Firebase services...');
+  
+  const results = {
+    storage: await testFirebaseConnection(),
+    firestore: await testFirestoreConnection()
+  };
+  
+  const allSuccessful = Object.values(results).every(result => result.success);
+  
+  if (allSuccessful) {
+    console.log('🎉 All Firebase services are working correctly!');
+  } else {
+    console.warn('⚠️ Some Firebase services have issues. Check the logs above.');
+  }
+  
+  return results;
 };

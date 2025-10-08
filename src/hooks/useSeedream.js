@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { performSeedreamGeneration, generateCategoryPrompt } from '@/lib/seedream';
 import { useAuth } from '@/contexts/AuthContext';
+import { autoSaveService } from '@/services/autoSaveService';
 
 export const useSeedream = () => {
   const [generatedImage, setGeneratedImage] = useState(null);
@@ -51,29 +52,25 @@ export const useSeedream = () => {
     }
   };
 
-  // Function to automatically save generated image to My Photos
-  const saveToMyPhotos = async (imageUrl, prompt, category) => {
+  // Function to automatically save generated image using autoSaveService
+  const saveGeneratedPhoto = async (imageUrl, prompt, category) => {
     if (!userProfile) return;
     
     try {
-      const newPhoto = {
-        id: `generated_${Date.now()}`,
-        name: `${category} - ${prompt.substring(0, 30)}${prompt.length > 30 ? '...' : ''}`,
-        url: imageUrl,
-        date: new Date().toISOString(),
-        type: 'generated',
-        category: category,
-        prompt: prompt
-      };
-
-      const currentPhotos = userProfile.photos || [];
-      const updatedPhotos = [newPhoto, ...currentPhotos];
-      
-      await updateUserData({ photos: updatedPhotos });
+      await autoSaveService.autoSavePhoto(
+        imageUrl,
+        `${category} - ${prompt.substring(0, 30)}${prompt.length > 30 ? '...' : ''}`,
+        {
+          type: 'generated',
+          category: category,
+          prompt: prompt,
+          generatedAt: new Date().toISOString()
+        }
+      );
       
       toast({
         title: "Foto opgeslagen! 📸",
-        description: "Je gegenereerde afbeelding is automatisch toegevoegd aan Mijn Foto's.",
+        description: "Je gegenereerde afbeelding is automatisch opgeslagen.",
       });
     } catch (error) {
       console.error('Error saving photo:', error);
@@ -167,8 +164,8 @@ export const useSeedream = () => {
           description: `Succesvol een ${category} afbeelding gemaakt. Credits resterend: ${(userProfile?.credits || 0) - creditCost}`,
         });
         
-        // Automatically save to My Photos
-        await saveToMyPhotos(result.imageUrl, prompt, category);
+        // Automatically save using autoSaveService
+        await saveGeneratedPhoto(result.imageUrl, prompt, category);
         
         return result;
       } else {

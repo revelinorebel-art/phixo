@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { ReactCompareSlider, ReactCompareSliderImage } from 'react-compare-slider';
-// import { useAuth } from '@/contexts/AuthContext'; // Temporarily disabled for testing
+import { useAuth } from '@/contexts/AuthContext';
 
 import { toast } from '@/components/ui/use-toast';
 import Sidebar from '@/components/Layout/Sidebar';
@@ -23,16 +23,13 @@ import {
 } from 'lucide-react';
 // useAIApi removed - only using Replicate/Nano Banana
 import useNanoBanana from '@/hooks/useNanoBanana';
-import { uploadEditedPhoto } from '@/services/storageService';
 import { autoSaveService } from '@/services/autoSaveService';
+import { useImageHistory } from '@/hooks/useFirebase';
 
 
 const PhotoEditor = () => {
   const { photoId } = useParams();
-  // Mock user profile for testing without Firebase
-  const userProfile = { name: 'Test User' };
-  const authLoading = false;
-
+  const { user, userProfile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [photo, setPhoto] = useState(null);
@@ -69,7 +66,44 @@ const PhotoEditor = () => {
     credits 
   } = useNanoBanana(initialImageUrl, photoId);
 
+  // Firebase hooks for history
+  const { refreshHistory, history: imageHistory } = useImageHistory();
 
+  // Add state for thumbnail functionality
+  const [selectedThumbnail, setSelectedThumbnail] = useState(null);
+
+  // Filter history to only show edited photos for thumbnails
+  const editedPhotosHistory = useMemo(() => {
+    return imageHistory?.filter(item => item.type === 'edited') || [];
+  }, [imageHistory]);
+
+
+
+  // Function to load thumbnail into editor
+  const loadThumbnailIntoEditor = useCallback((historyItem) => {
+    console.log('🖼️ Loading thumbnail into editor:', historyItem);
+    
+    // Create a new photo object from the history item
+    const thumbnailPhoto = {
+      id: `thumbnail_${Date.now()}`,
+      name: `edited_${historyItem.prompt?.substring(0, 20) || 'photo'}.jpg`,
+      date: historyItem.timestamp?.toDate?.()?.toISOString() || new Date().toISOString(),
+      url: historyItem.imageUrl
+    };
+    
+    // Update the current photo
+    setPhoto(thumbnailPhoto);
+    setIsCleared(false);
+    setSelectedThumbnail(historyItem.id);
+    
+    // Save to localStorage for persistence
+    localStorage.setItem(`photo_${photoId}`, JSON.stringify(thumbnailPhoto));
+    
+    toast({
+      title: "Foto geladen! 🖼️",
+      description: "Je kunt nu verder bewerken vanaf deze foto.",
+    });
+  }, [photoId]);
 
   // Clear project
   const handleClearProject = () => {
@@ -105,13 +139,17 @@ const PhotoEditor = () => {
         console.log('✅ Found photo in localStorage:', parsedPhoto);
         setPhoto(parsedPhoto);
       } else {
-        console.log('⚠️ No photo found, using placeholder');
-        setPhoto({
+        console.log('⚠️ No photo found, using test photo');
+        const testPhoto = {
           id: photoId,
-          name: 'test-photo.jpg',
-          date: new Date().toISOString(),
-          url: 'https://via.placeholder.com/800x600/4F46E5/FFFFFF?text=Test+Photo'
-        });
+          name: 'Test Foto voor Bewerking',
+          originalImage: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop',
+          editedImage: null,
+          createdAt: new Date().toISOString(),
+          url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop'
+        };
+        console.log('🧪 Setting test photo:', testPhoto);
+        setPhoto(testPhoto);
       }
       
       // Load saved prompt
@@ -148,10 +186,10 @@ const PhotoEditor = () => {
     if(!pageLoading && !photo) {
       toast({
         title: "Foto niet gevonden",
-        description: "De gevraagde foto kon niet worden gevonden. Je wordt teruggestuurd.",
+        description: "De gevraagde foto kon niet worden gevonden. Je wordt teruggestuurd naar het dashboard.",
         variant: "destructive"
       });
-      navigate('/my-photos');
+      navigate('/dashboard');
     }
   }, [pageLoading, photo, navigate]);
 
@@ -196,72 +234,102 @@ const PhotoEditor = () => {
       : "bv. 'Verander de achtergrond naar een zonnig strand'";
       }, [currentResultImageUrl, currentOriginalImageUrl]);
 
+  // Auto-hide "Opgeslagen" popup after 2 seconds
+  useEffect(() => {
+    if (uploadedToStorage) {
+      const timer = setTimeout(() => {
+        setUploadedToStorage(false);
+      }, 2000); // 2 seconds
 
-
-
+      // Cleanup timer if component unmounts or uploadedToStorage changes
+      return () => clearTimeout(timer);
+    }
+  }, [uploadedToStorage]);
 
   const handleApiCall = async (operation, params) => {
+    console.log('🚀 Starting handleApiCall...', { operation, params });
+    
     const result = await callNanoBananaApi(params.prompt, params);
+    console.log('🎯 NanoBanana API result:', result);
+    
     // Clear the prompt field after successful editing to encourage iterative editing
     if (result && result.success) {
+      console.log('✅ API call successful, clearing prompt...');
       setPrompt('');
       
       // Automatically upload the edited photo to Firebase Storage
-      if (result.imageUrl) {
-        await uploadEditedPhotoToStorage(result.imageUrl, params.prompt);
+      // NanoBanana API returns 'newUrl', not 'imageUrl'
+      const editedImageUrl = result.newUrl || result.imageUrl;
+      if (editedImageUrl) {
+        console.log('🔄 Starting automatic upload for editedImageUrl:', editedImageUrl);
+        await uploadEditedPhotoToStorage(editedImageUrl, params.prompt);
+      } else {
+        console.warn('⚠️ No imageUrl/newUrl in result, skipping automatic upload');
+        console.log('🔍 Full result object:', result);
       }
+    } else {
+      console.error('❌ API call failed:', result);
     }
+    
+    console.log('🏁 handleApiCall finished');
   };
 
-  // Function to upload edited photo to Firebase Storage using AutoSaveService
+  // Function to upload edited photo to Firebase Storage (same strategy as FotoGenerator)
   const uploadEditedPhotoToStorage = async (imageUrl, editPrompt) => {
     try {
+      console.log('🔄 Starting uploadEditedPhotoToStorage...', { imageUrl, editPrompt });
+      
       setIsUploading(true);
       setUploadProgress(0);
       setUploadedToStorage(false);
 
-      // Prepare photo data for AutoSaveService
-      const photoData = {
+      // Save edited image using AutoSaveService (single upload)
+      console.log('🔄 Calling autoSaveService.autoSavePhoto...');
+      const autoSaveResult = await autoSaveService.autoSavePhoto({
         imageUrl: imageUrl,
-        tool: 'photo-optimization',
+        tool: 'foto-optimalisatie',
         prompt: editPrompt,
         metadata: {
-          originalPhotoId: photoId,
-          originalFileName: photo?.name || 'unknown',
-          editType: 'ai_generated',
-          aspectRatio: photoDimensions.aspectRatio || 'unknown',
-          resolution: `${photoDimensions.width}x${photoDimensions.height}` || 'unknown'
+          aspectRatio: photoDimensions.aspectRatio || '1:1',
+          type: 'edited',
+          originalImage: photo?.url || null,
+          timestamp: new Date().toISOString()
         }
-      };
-
-      // Use AutoSaveService for automatic saving
-      const result = await autoSaveService.autoSavePhoto(photoData, (progress) => {
-        setUploadProgress(progress);
       });
-
-      if (result && result.success) {
-        setUploadedToStorage(true);
-        
-        // Store the Firebase URL for future reference
-        localStorage.setItem(`edited_photo_${photoId}_${Date.now()}`, JSON.stringify({
-          firebaseUrl: result.firebaseUrl,
-          metadata: result.metadata,
-          localUrl: imageUrl,
-          autoSaved: true
-        }));
-      } else {
-        throw new Error(result?.error || 'AutoSave failed');
-      }
-    } catch (error) {
-      console.error('Error uploading to Firebase Storage:', error);
+      console.log('✅ AutoSaveService completed successfully:', autoSaveResult);
+      
+      // Refresh history to update thumbnails immediately
+      await refreshHistory();
+      
+      setUploadedToStorage(true);
+      
+      // Show success notification
+      console.log('🎉 Showing success toast...');
       toast({
-        title: "Upload fout",
-        description: `Kon de bewerkte foto niet opslaan: ${error.message}`,
-        variant: "destructive"
+        title: "Foto automatisch opgeslagen! ☁️",
+        description: "Je bewerkte foto is succesvol opgeslagen.",
+        duration: 5000
+      });
+      
+      console.log('✅ Upload completed successfully!');
+    } catch (error) {
+      console.error('❌ uploadEditedPhotoToStorage error:', error);
+      console.error('❌ Full error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      setUploadedToStorage(false);
+      
+      toast({
+        title: "Upload mislukt",
+        description: `Kon de foto niet automatisch opslaan: ${error.message}`,
+        variant: "destructive",
+        duration: 5000
       });
     } finally {
       setIsUploading(false);
-      setUploadProgress(0);
+      console.log('🏁 uploadEditedPhotoToStorage finished');
     }
   };
 
@@ -357,7 +425,7 @@ const PhotoEditor = () => {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `${photo.name}_edited_phixo.jpg`;
+        a.download = `${photo?.name || 'foto'}_edited_phixo.jpg`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -369,14 +437,22 @@ const PhotoEditor = () => {
 
   console.log('🎯 PhotoEditor render check:', { 
     pageLoading, 
-    authLoading, 
     photo: !!photo, 
     photoUrl: photo?.url,
-    shouldShowLoading: pageLoading || authLoading || !photo 
+    shouldShowLoading: pageLoading || !photo 
   });
 
-  if (pageLoading || authLoading || !photo) {
-    console.log('⏳ Showing loading screen because:', { pageLoading, authLoading, hasPhoto: !!photo });
+  // Only check pageLoading and photo availability
+  const shouldShowLoading = pageLoading || !photo;
+  
+  if (shouldShowLoading) {
+    console.log('⏳ Showing loading screen because:', { 
+      pageLoading, 
+      hasPhoto: !!photo,
+      photoId,
+      photo: photo ? { id: photo.id, url: photo.url } : null,
+      shouldShowLoading
+    });
     return (
       <div className="flex min-h-screen">
         <Sidebar />
@@ -384,6 +460,9 @@ const PhotoEditor = () => {
           <div className="text-center flex flex-col items-center gap-4">
             <Sparkles className="w-12 h-12 text-purple-400 animate-pulse"/>
             <p className="text-lg text-white">Editor laden, een moment geduld...</p>
+            <p className="text-sm text-gray-400">
+              Debug: pageLoading={pageLoading.toString()}, hasPhoto={(!photo).toString()}, photoId={photoId}
+            </p>
           </div>
         </main>
       </div>
@@ -393,8 +472,8 @@ const PhotoEditor = () => {
   return (
     <>
       <Helmet>
-        <title>Foto Bewerken: {photo?.name} - phixo</title>
-        <meta name="description" content={`Bewerk en optimaliseer '${photo?.name}' met krachtige AI-tools.`} />
+        <title>Foto Bewerken: {photo?.name || 'Foto'} - phixo</title>
+        <meta name="description" content={`Bewerk en optimaliseer '${photo?.name || 'je foto'}' met krachtige AI-tools.`} />
       </Helmet>
       <div className="flex min-h-screen">
         <Sidebar />
@@ -402,9 +481,9 @@ const PhotoEditor = () => {
           
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-2 flex flex-col relative">
             <div className="flex items-center justify-between mb-4">
-              <Link to="/my-photos" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 transition-colors">
+              <Link to="/dashboard" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 transition-colors">
                 <ArrowLeft className="w-4 h-4" />
-                Terug naar Mijn Foto's
+                Terug naar Dashboard
               </Link>
               <div className="flex items-center gap-2">
                 <Button onClick={currentUndo} disabled={!currentCanUndo || currentIsLoading} variant="outline" size="icon" className="border-white/20 hover:bg-white/10 w-10 h-10"><Undo className="w-4 h-4"/></Button>
@@ -522,6 +601,76 @@ const PhotoEditor = () => {
                   </Card>
                 </BackgroundGradient>
                 
+                {/* Recent Edited Photos Thumbnails Section */}
+                {!isCleared && editedPhotosHistory && editedPhotosHistory.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    className="mt-6"
+                  >
+                    <Card className="glass-effect border-white/10">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-white text-lg flex items-center gap-2">
+                          <Camera className="w-5 h-5 text-purple-400" />
+                          Recent Bewerkte Foto's
+                        </CardTitle>
+                        <CardDescription className="text-white/70">
+                          Klik op een miniatuur om verder te bewerken
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex gap-3 overflow-x-auto pb-2">
+                          {editedPhotosHistory.slice(0, 8).map((historyItem, index) => (
+                            <motion.div
+                              key={historyItem.id}
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: index * 0.1 }}
+                              className={`relative flex-shrink-0 cursor-pointer group ${
+                                selectedThumbnail === historyItem.id ? 'ring-2 ring-purple-400' : ''
+                              }`}
+                              onClick={() => loadThumbnailIntoEditor(historyItem)}
+                            >
+                              <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-slate-800 border border-white/20 hover:border-purple-400/50 transition-all duration-200">
+                                <img
+                                  src={historyItem.imageUrl}
+                                  alt={`Bewerking ${index + 1}`}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                                  loading="lazy"
+                                />
+                                
+                                {/* Hover overlay */}
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                                  <Wand2 className="w-4 h-4 text-white" />
+                                </div>
+                                
+                                {/* Selected indicator */}
+                                {selectedThumbnail === historyItem.id && (
+                                  <div className="absolute top-1 right-1 w-3 h-3 bg-purple-400 rounded-full border border-white"></div>
+                                )}
+                              </div>
+                              
+                              {/* Tooltip with prompt */}
+                              {historyItem.prompt && (
+                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/90 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap max-w-32 truncate pointer-events-none z-10">
+                                  {historyItem.prompt}
+                                </div>
+                              )}
+                            </motion.div>
+                          ))}
+                        </div>
+                        
+                        {editedPhotosHistory.length > 8 && (
+                          <div className="mt-3 text-center">
+                            <span className="text-gray-400 text-sm">
+                              {editedPhotosHistory.length} bewerkte foto's opgeslagen
+                            </span>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                )}
 
               </motion.div>
 

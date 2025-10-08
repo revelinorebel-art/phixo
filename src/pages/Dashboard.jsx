@@ -1,31 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   Image, 
   Megaphone, 
   CreditCard, 
-  TrendingUp, 
   Clock,
   Star,
   Zap,
-  Bug
+  Trash2,
+  RefreshCw,
+  Download,
+  X,
+  ZoomIn,
+  Filter,
+  Calendar,
+  Edit3
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
 import Sidebar from '@/components/Layout/Sidebar';
-import { testFirebaseConnection, testImageUpload } from '@/utils/firebaseTest';
 import { autoSaveService } from '@/services/autoSaveService';
 
 const Dashboard = () => {
   const { user, userProfile, logout } = useAuth();
+  const navigate = useNavigate();
   const credits = userProfile?.credits || 0;
   const [recentProjects, setRecentProjects] = useState([]);
-  const [totalProjects, setTotalProjects] = useState(0);
-  const [testingFirebase, setTestingFirebase] = useState(false);
+  const [filteredProjects, setFilteredProjects] = useState([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
+  const [enlargedPhoto, setEnlargedPhoto] = useState(null);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'week', 'month'
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
   // Debug: Log user status
   useEffect(() => {
@@ -36,265 +47,298 @@ const Dashboard = () => {
     console.log('🔍 Dashboard - phixo_logged_out:', localStorage.getItem('phixo_logged_out'));
   }, [user, userProfile]);
 
-  // Load recent projects from all sources
-  useEffect(() => {
-    const loadRecentProjects = () => {
-      try {
-        // Get photos from localStorage (auto-saved photos)
-        const localPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
+  // Load recent projects from Firebase Storage via autoSaveService
+  const loadRecentProjects = async () => {
+    if (!user) {
+      console.log('🔍 Dashboard: No user authenticated, skipping photo load');
+      setRecentProjects([]);
+      return;
+    }
+
+    try {
+      setLoadingPhotos(true);
+      console.log('🔄 Dashboard: Loading recent photos from autoSaveService...');
+      
+      // Use the new autoSaveService to get recent photos
+      const photos = await autoSaveService.getRecentPhotos(12); // Get more photos for better overview
+      console.log('✅ Dashboard: Loaded photos from autoSaveService:', photos.length);
+      
+      // If no photos from database, add a test photo for development
+      if (photos.length === 0) {
+        console.log('🧪 Dashboard: No photos found, adding test photo for development');
+        const testPhoto = {
+          id: 'test_photo_123',
+          name: 'Test Foto voor Bewerking',
+          url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop',
+          originalImage: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop',
+          editedImage: null,
+          category: 'test',
+          createdAt: new Date().toISOString(),
+          prompt: 'Test foto voor het testen van de edit functionaliteit',
+          tool: 'test',
+          firebasePath: null,
+          autoSaved: false,
+          displayCategory: 'Test Foto'
+        };
         
-        // Get photos from userProfile (legacy photos)
-        const profilePhotos = userProfile?.photos || [];
-        
-        // Merge and deduplicate
-        const allPhotos = [...localPhotos, ...profilePhotos];
-        const uniquePhotos = allPhotos.filter((photo, index, self) => 
-          index === self.findIndex(p => p.url === photo.url)
-        );
-        
-        // Sort by date (newest first) and take top 3
-        uniquePhotos.sort((a, b) => {
-          const dateA = new Date(a.createdAt || a.date || 0);
-          const dateB = new Date(b.createdAt || b.date || 0);
-          return dateB - dateA;
+        setRecentProjects([testPhoto]);
+        setFilteredProjects([testPhoto]);
+      } else {
+        setRecentProjects(photos);
+        setFilteredProjects(photos); // Initially show all photos
+      }
+    } catch (error) {
+      console.error('❌ Dashboard: Error loading recent projects:', error);
+      setRecentProjects([]);
+      setFilteredProjects([]);
+      toast({
+        title: "Fout bij laden foto's",
+        description: "Kon recente foto's niet laden. Probeer de pagina te vernieuwen.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingPhotos(false);
+    }
+  };
+
+  // Filter photos by date
+  const filterPhotosByDate = (photos, filter) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    switch (filter) {
+      case 'today':
+        return photos.filter(photo => {
+          const photoDate = new Date(photo.createdAt);
+          const photoDay = new Date(photoDate.getFullYear(), photoDate.getMonth(), photoDate.getDate());
+          return photoDay.getTime() === today.getTime();
         });
-        
-        setRecentProjects(uniquePhotos.slice(0, 3));
-        setTotalProjects(uniquePhotos.length);
-      } catch (error) {
-        console.error('Error loading recent projects:', error);
-        setRecentProjects([]);
-        setTotalProjects(0);
+      
+      case 'week':
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return photos.filter(photo => {
+          const photoDate = new Date(photo.createdAt);
+          return photoDate >= weekAgo;
+        });
+      
+      case 'month':
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        return photos.filter(photo => {
+          const photoDate = new Date(photo.createdAt);
+          return photoDate >= monthAgo;
+        });
+      
+      case 'all':
+      default:
+        return photos;
+    }
+  };
+
+  // Apply filter when dateFilter or recentProjects change
+  useEffect(() => {
+    const filtered = filterPhotosByDate(recentProjects, dateFilter);
+    setFilteredProjects(filtered);
+    console.log(`🔍 Dashboard: Applied filter '${dateFilter}', showing ${filtered.length} of ${recentProjects.length} photos`);
+  }, [recentProjects, dateFilter]);
+
+  // Load recent projects on component mount and user change
+  useEffect(() => {
+    loadRecentProjects();
+  }, [user]);
+
+  // Close filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showFilterDropdown && !event.target.closest('.filter-dropdown-container')) {
+        setShowFilterDropdown(false);
       }
     };
 
-    loadRecentProjects();
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFilterDropdown]);
 
-    // Listen for real-time updates when new photos are saved
-    const handleStorageUpdate = () => {
+  // Listen for photo updates
+  useEffect(() => {
+    const handlePhotosUpdated = (e) => {
+      console.log('🔄 Dashboard: Photos updated event received, refreshing...', e.detail);
       loadRecentProjects();
     };
 
+    const handleStorageUpdate = (e) => {
+      console.log('🔄 Dashboard: Storage updated, refreshing projects...', e.detail);
+      loadRecentProjects();
+    };
+
+    window.addEventListener('photosUpdated', handlePhotosUpdated);
     window.addEventListener('localStorageUpdated', handleStorageUpdate);
-    return () => window.removeEventListener('localStorageUpdated', handleStorageUpdate);
-  }, [userProfile]);
+    
+    // Also listen for storage events from other tabs
+    const handleStorageChange = (e) => {
+      if (e.key === null) {
+        console.log('🔄 Dashboard: localStorage changed, refreshing projects...');
+        loadRecentProjects();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('photosUpdated', handlePhotosUpdated);
+      window.removeEventListener('localStorageUpdated', handleStorageUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user]);
 
-  // Firebase test functions
-  const handleTestFirebaseConnection = async () => {
-    setTestingFirebase(true);
+  // Delete photo function
+  const handleDeletePhoto = async (photo) => {
+    if (!photo || !photo.id) {
+      toast({
+        title: "Fout",
+        description: "Kan foto niet verwijderen: geen geldige foto ID.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
-      const result = await testFirebaseConnection();
-      if (result.success) {
-        toast({
-          title: "Firebase verbinding succesvol",
-          description: result.message,
-          variant: "default"
-        });
-      } else {
-        toast({
-          title: "Firebase verbinding gefaald",
-          description: result.message,
-          variant: "destructive"
-        });
+      setDeletingPhotoId(photo.id);
+      console.log('🗑️ Dashboard: Deleting photo...', photo);
+      
+      const success = await autoSaveService.deletePhoto(photo);
+      
+      if (success) {
+        // Remove from local state immediately for better UX
+        setRecentProjects(prev => prev.filter(p => p.id !== photo.id));
+        setFilteredProjects(prev => prev.filter(p => p.id !== photo.id));
+        console.log('✅ Dashboard: Photo deleted successfully');
       }
     } catch (error) {
+      console.error('❌ Dashboard: Error deleting photo:', error);
       toast({
-        title: "Test fout",
-        description: error.message,
+        title: "Verwijderen mislukt",
+        description: "Er is een fout opgetreden bij het verwijderen van de foto.",
         variant: "destructive"
       });
     } finally {
-      setTestingFirebase(false);
+      setDeletingPhotoId(null);
     }
   };
 
-  const handleTestImageUpload = async () => {
-    setTestingFirebase(true);
+  // Handle photo enlargement
+  const handleEnlargePhoto = (photo) => {
+    setEnlargedPhoto(photo);
+    setShowPhotoModal(true);
+  };
+
+  // Handle photo download - prioritize original photo if available
+  const handleDownloadPhoto = async (photo) => {
     try {
-      const result = await testImageUpload();
-      if (result.success) {
-        toast({
-          title: "Image upload test succesvol",
-          description: result.message,
-          variant: "default"
-        });
-      } else {
-        toast({
-          title: "Image upload test gefaald",
-          description: result.message,
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
+      // Determine which photo to download: original (clean) or edited version
+      const downloadUrl = photo.originalImage || photo.url;
+      const isOriginal = !!photo.originalImage;
+      
+      console.log('📥 Dashboard: Downloading photo...', {
+        photoName: photo.name,
+        isOriginal,
+        originalUrl: photo.originalImage,
+        editedUrl: photo.url,
+        downloadUrl
+      });
+      
+      // Detect file extension from URL or default to jpg
+      let fileExtension = '.jpg';
+      if (downloadUrl.includes('.png')) fileExtension = '.png';
+      else if (downloadUrl.includes('.gif')) fileExtension = '.gif';
+      else if (downloadUrl.includes('.webp')) fileExtension = '.webp';
+      else if (downloadUrl.includes('.jpeg')) fileExtension = '.jpeg';
+      
+      // Create a proper filename with timestamp and version indicator
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const baseFilename = photo.name ? photo.name.replace(/\.[^/.]+$/, "") : `phixo-foto-${timestamp}`;
+      const versionSuffix = isOriginal ? '_origineel' : '_bewerkt';
+      const filename = `${baseFilename}${versionSuffix}${fileExtension}`;
+      
+      // Use a proxy approach to avoid CORS issues
+      const proxyUrl = `http://localhost:3001/download-image?url=${encodeURIComponent(downloadUrl)}&filename=${encodeURIComponent(filename)}`;
+      
+      // Create and trigger download link
+      const link = document.createElement('a');
+      link.href = proxyUrl;
+      link.download = filename;
+      link.style.display = 'none';
+      
+      // Add to DOM, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
       toast({
-        title: "Test fout",
-        description: error.message,
+        title: "Download gestart",
+        description: `${isOriginal ? '🎯 Originele (schone)' : '✏️ Bewerkte'} versie: ${filename} wordt gedownload.`,
+      });
+    } catch (error) {
+      console.error('❌ Dashboard: Error downloading photo:', error);
+      toast({
+        title: "Download mislukt",
+        description: "Er is een fout opgetreden bij het downloaden van de foto.",
         variant: "destructive"
       });
-    } finally {
-      setTestingFirebase(false);
     }
   };
 
-  const handleTestAutoSave = async () => {
-    setTestingFirebase(true);
-    try {
-      // Create a test canvas
-      const canvas = document.createElement('canvas');
-      canvas.width = 100;
-      canvas.height = 100;
-      const ctx = canvas.getContext('2d');
-      
-      // Draw a simple test image
-      ctx.fillStyle = '#FF6B6B';
-      ctx.fillRect(0, 0, 100, 100);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '12px Arial';
-      ctx.fillText('TEST', 35, 55);
+  // Close photo modal
+  const closePhotoModal = () => {
+    setShowPhotoModal(false);
+    setEnlargedPhoto(null);
+  };
 
-      // Convert canvas to blob and create imageUrl
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      const imageUrl = URL.createObjectURL(blob);
-      
-      // Create complete photo data with all required fields
+  // Handle edit photo - navigate to PhotoEditor with photo data
+  const handleEditPhoto = (photo) => {
+    console.log('🔧 Dashboard: handleEditPhoto called with photo:', photo);
+    try {
+      // Store photo data in localStorage for PhotoEditor to access
       const photoData = {
-        imageUrl: imageUrl,
-        tool: 'mockup-creator',
-        prompt: 'Test image for debugging AutoSave functionality',
-        timestamp: Date.now(),
-        canvas: canvas,
-        metadata: {
-          width: 100,
-          height: 100,
-          format: 'png',
-          testMode: true
-        }
+        id: photo.id,
+        name: photo.name,
+        url: photo.url,
+        originalImage: photo.originalImage,
+        editedImage: photo.editedImage,
+        createdAt: photo.createdAt,
+        isAutoSaved: photo.isAutoSaved
       };
       
-      console.log('Testing AutoSave with photoData:', photoData);
+      console.log('💾 Dashboard: Storing photo data in localStorage:', photoData);
+      localStorage.setItem(`photo_${photo.id}`, JSON.stringify(photoData));
       
-      // Test the AutoSave service
-      const result = await autoSaveService.autoSavePhoto(photoData);
+      // Verify data was stored
+      const storedData = localStorage.getItem(`photo_${photo.id}`);
+      console.log('✅ Dashboard: Verified stored data:', storedData);
       
-      // Clean up the object URL
-      URL.revokeObjectURL(imageUrl);
+      // Navigate to PhotoEditor with photoId parameter
+      const targetRoute = `/edit-photo/${photo.id}`;
+      console.log('🚀 Dashboard: Navigating to:', targetRoute);
+      navigate(targetRoute);
       
-      if (result && result.success) {
-        toast({
-          title: "AutoSave Test Successful",
-          description: `Photo saved successfully: ${result.photoId}`,
-          variant: "default"
-        });
-        console.log('AutoSave result:', result);
-      } else {
-        toast({
-          title: "AutoSave Test Failed",
-          description: result?.error || 'Unknown error occurred',
-          variant: "destructive"
-        });
-        console.error('AutoSave failed:', result);
-      }
-    } catch (error) {
-      console.error('AutoSave test error:', error);
       toast({
-        title: "AutoSave Test Error",
-        description: error.message,
-        variant: "destructive"
+        title: "Foto wordt geladen",
+        description: "Je wordt doorgestuurd naar de foto editor...",
       });
-    } finally {
-      setTestingFirebase(false);
-    }
-  };
-
-  const handleCheckAuth = async () => {
-    try {
-      const { authService } = await import('@/services/authService');
-      const currentUser = authService.getCurrentUser();
-      
-      console.log('Current user:', currentUser);
-      console.log('User UID:', currentUser?.uid);
-      console.log('User email:', currentUser?.email);
-      console.log('User authenticated:', !!currentUser);
-      
-      if (currentUser) {
-        toast({
-          title: "Authentication Status",
-          description: `Logged in as: ${currentUser.email} (UID: ${currentUser.uid})`,
-          variant: "default"
-        });
-      } else {
-        toast({
-          title: "Authentication Status",
-          description: "No user is currently logged in - Please login first",
-          variant: "destructive"
-        });
-      }
     } catch (error) {
-      console.error('Auth check error:', error);
+      console.error('❌ Dashboard: Error preparing photo for editing:', error);
       toast({
-        title: "Auth Check Error",
-        description: error.message,
+        title: "Fout bij laden foto",
+        description: "Er is een fout opgetreden bij het voorbereiden van de foto voor bewerking.",
         variant: "destructive"
       });
     }
   };
 
-  const handleTestLogin = async () => {
-    try {
-      const { authService } = await import('@/services/authService');
-      
-      // Test with a demo account
-      const result = await authService.signIn('test@phixo.nl', 'testpassword123');
-      
-      if (result.error) {
-        toast({
-          title: "Test Login Failed",
-          description: `Error: ${result.error}. You may need to create this test account first.`,
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "Test Login Successful",
-          description: "Test user logged in successfully!",
-          variant: "default"
-        });
-      }
-    } catch (error) {
-      console.error('Test login error:', error);
-      toast({
-        title: "Test Login Error",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
-      const stats = [
-        {
-          title: 'Totaal Projecten',
-          value: totalProjects,
-          icon: Image,
-          color: 'from-blue-500 to-cyan-500',
-        },
-        {
-          title: 'Advertenties Gemaakt',
-          value: userProfile?.ads?.length || 0,
-          icon: Megaphone,
-          color: 'from-purple-500 to-pink-500',
-        },
-        {
-          title: 'Credits Gebruikt',
-          value: (100 - credits),
-          icon: Zap,
-          color: 'from-orange-500 to-red-500',
-        },
-        {
-          title: 'Succes Rate',
-          value: '100%',
-          icon: TrendingUp,
-          color: 'from-green-500 to-emerald-500',
-        }
-      ];
+      // Statistics removed as requested
 
       const quickActions = [
         {
@@ -303,20 +347,6 @@ const Dashboard = () => {
           icon: Image,
           color: 'from-blue-500 to-cyan-500',
           link: '/upload-photos'
-        },
-        {
-          title: 'Maak Advertentie',
-          description: 'Creëer professionele advertenties met AI-assistentie',
-          icon: Megaphone,
-          color: 'from-purple-500 to-pink-500',
-          link: '/create-ad'
-        },
-        {
-          title: 'Koop Credits',
-          description: 'Krijg meer credits voor extra AI-verwerkingen',
-          icon: CreditCard,
-          color: 'from-green-500 to-emerald-500',
-          link: '/subscription'
         }
       ];
 
@@ -330,14 +360,14 @@ const Dashboard = () => {
           <div className="flex min-h-screen">
             <Sidebar />
             
-            <main className="flex-1 ml-72 p-8">
+            <main className="flex-1 ml-72 p-8 pb-16">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6 }}
                 className="max-w-7xl mx-auto"
               >
-                <div className="mb-8">
+                <div className="mb-12">
                   <h1 className="text-4xl font-bold gradient-text mb-2">
                     Welkom terug! 👋
                   </h1>
@@ -346,239 +376,300 @@ const Dashboard = () => {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  {stats.map((stat, index) => {
-                    const Icon = stat.icon;
-                    return (
-                      <motion.div
-                        key={stat.title}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                      >
-                        <Card className="glass-effect border-white/10 card-hover">
-                          <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-white/70 text-sm font-medium">{stat.title}</p>
-                                <p className="text-3xl font-bold text-white mt-1">{stat.value}</p>
-                              </div>
-                              <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${stat.color} flex items-center justify-center`}>
-                                <Icon className="w-6 h-6 text-white" />
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </motion.div>
-                    );
-                  })}
-                </div>
+                {/* Statistics section removed as requested */}
 
+                {/* Quick Actions and Credits Grid */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 }}
-                  className="mb-8"
+                  className="mb-16"
                 >
-                  <h2 className="text-2xl font-bold text-white mb-6">Snelle Acties</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {quickActions.map((action) => {
-                      const Icon = action.icon;
-                      return (
-                        <Link key={action.title} to={action.link}>
-                          <Card className="glass-effect border-white/10 card-hover cursor-pointer h-full">
-                            <CardContent className="p-6">
-                              <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${action.color} flex items-center justify-center mb-4`}>
-                                <Icon className="w-6 h-6 text-white" />
-                              </div>
-                              <h3 className="text-lg font-semibold text-white mb-2">{action.title}</h3>
-                              <p className="text-white/70 text-sm">{action.description}</p>
-                            </CardContent>
-                          </Card>
-                        </Link>
-                      );
-                    })}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                    {/* Upload Photos Section */}
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.5 }}
+                    >
+                      <h2 className="text-2xl font-bold text-white mb-4">Snelle Acties</h2>
+                      {quickActions.map((action) => {
+                        const Icon = action.icon;
+                        return (
+                          <Link key={action.title} to={action.link}>
+                            <Card className="glass-effect border-white/10 card-hover cursor-pointer h-full">
+                              <CardContent className="p-6">
+                                <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${action.color} flex items-center justify-center mb-4`}>
+                                  <Icon className="w-6 h-6 text-white" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-white mb-2">{action.title}</h3>
+                                <p className="text-white/70 text-sm">{action.description}</p>
+                              </CardContent>
+                            </Card>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+
+                    {/* Credits Overview Section */}
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.6 }}
+                    >
+                      <h2 className="text-2xl font-bold text-white mb-4">Credits Overzicht</h2>
+                      <Card className="glass-effect border-white/10 h-full">
+                        <CardHeader>
+                          <CardTitle className="text-lg text-white flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-yellow-400" />
+                            Credits Overzicht
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-center mb-4">
+                            <div className="text-4xl font-bold text-purple-400 mb-2">
+                              {credits}
+                            </div>
+                            <p className="text-white/70 text-sm">Credits beschikbaar</p>
+                          </div>
+                          <div className="flex justify-between text-sm mb-4">
+                            <span className="text-white/70">Plan:</span>
+                            <span className="text-purple-400 capitalize">{userProfile?.subscription_type}</span>
+                          </div>
+                          <Link to="/subscription" className="block">
+                            <Button className="w-full button-glow">
+                              <CreditCard className="w-4 h-4 mr-2" />
+                              Meer Credits
+                            </Button>
+                          </Link>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
                   </div>
                 </motion.div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.6 }}
-                    className="lg:col-span-2"
-                  >
-                    <Card className="glass-effect border-white/10">
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <CardTitle className="text-xl text-white">Recente Projecten</CardTitle>
-                            <CardDescription className="text-white/70">
-                              Je laatste foto-optimalisatie projecten
-                            </CardDescription>
-                          </div>
-                          <Link to="/my-photos">
-                            <Button variant="outline" size="sm" className="border-white/20 hover:bg-white/10">
-                              Alles bekijken
-                            </Button>
-                          </Link>
+                {/* Recent Projects - Full Width */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.7 }}
+                  className="mt-12"
+                >
+                  <Card className="glass-effect border-white/10">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-xl text-white">Recente Projecten</CardTitle>
+                          <CardDescription className="text-white/70">
+                            Je laatste foto-optimalisatie projecten
+                          </CardDescription>
                         </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          {recentProjects.length > 0 ? recentProjects.map((project) => (
-                            <Link to={`/my-photos`} key={project.id}>
-                              <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
-                                 <img  className="w-16 h-16 rounded-lg object-contain bg-gray-900/50" alt={project.name} src={project.url} />
-                                <div className="flex-1">
-                                  <h4 className="font-semibold text-white truncate">{project.name}</h4>
-                                  <p className="text-sm text-white/70">{project.category || 'Foto Optimalisatie'}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Clock className="w-3 h-3 text-white/50" />
-                                    <span className="text-xs text-white/50">
-                                      {new Date(project.createdAt || project.date || Date.now()).toLocaleDateString()}
-                                    </span>
-                                    {project.metadata?.autoSaved && (
-                                      <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">
-                                        Auto-opgeslagen
-                                      </span>
-                                    )}
-                                  </div>
+                        <div className="flex gap-2">
+                          <div className="relative filter-dropdown-container">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="border-white/20 hover:bg-white/10"
+                              onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                            >
+                              <Filter className="w-4 h-4 mr-2" />
+                              Filter
+                            </Button>
+                            
+                            {showFilterDropdown && (
+                              <div className="absolute right-0 top-full mt-2 w-48 bg-gray-900/95 backdrop-blur-sm border border-white/20 rounded-lg shadow-xl z-50">
+                                <div className="p-2">
+                                  <div className="text-xs text-white/70 mb-2 px-2">Filter op datum:</div>
+                                  {[
+                                    { value: 'all', label: 'Alle foto\'s', icon: Calendar },
+                                    { value: 'today', label: 'Vandaag', icon: Calendar },
+                                    { value: 'week', label: 'Deze week', icon: Calendar },
+                                    { value: 'month', label: 'Deze maand', icon: Calendar }
+                                  ].map((option) => {
+                                    const Icon = option.icon;
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                                          dateFilter === option.value 
+                                            ? 'bg-purple-600/50 text-white' 
+                                            : 'text-white/80 hover:bg-white/10'
+                                        }`}
+                                        onClick={() => {
+                                          setDateFilter(option.value);
+                                          setShowFilterDropdown(false);
+                                        }}
+                                      >
+                                        <Icon className="w-4 h-4" />
+                                        {option.label}
+                                        {dateFilter === option.value && (
+                                          <div className="ml-auto w-2 h-2 bg-purple-400 rounded-full"></div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
-                            </Link>
-                          )) : (
-                            <p className="text-white/60 text-center py-8">Je hebt nog geen projecten.</p>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {loadingPhotos ? (
+                          <div className="text-center py-8">
+                            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-white/50" />
+                            <p className="text-white/60">Foto's laden...</p>
+                          </div>
+                        ) : filteredProjects.length > 0 ? filteredProjects.map((project) => (
+                          <div key={project.id} className="flex items-center gap-6 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors group">
+                            <div className="relative group/photo">
+                              <img 
+                                className="w-32 h-32 rounded-lg object-contain bg-gray-900/50 cursor-pointer hover:opacity-80 transition-opacity" 
+                                alt={project.name || 'Foto'} 
+                                src={project.url}
+                                onClick={() => handleEnlargePhoto(project)}
+                              />
+                              <div 
+                                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/photo:opacity-100 transition-opacity bg-black/20 rounded-lg cursor-pointer"
+                                onClick={() => handleEnlargePhoto(project)}
+                              >
+                                <ZoomIn className="w-6 h-6 text-white" />
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-white truncate">{project.name || 'Naamloos'}</h4>
+                              <p className="text-sm text-white/70">{project.displayCategory || project.tool || 'Foto'}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Clock className="w-3 h-3 text-white/50" />
+                                <span className="text-xs text-white/50">
+                                  {new Date(project.createdAt || project.date || Date.now()).toLocaleDateString()}
+                                </span>
+                                {project.metadata?.autoSaved && (
+                                  <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">
+                                    Auto-opgeslagen
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-blue-500/20 hover:bg-blue-500/10 text-blue-400"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadPhoto(project);
+                                }}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-green-500/20 hover:bg-green-500/10 text-green-400"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditPhoto(project);
+                                }}
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-red-500/20 hover:bg-red-500/10 text-red-400"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePhoto(project);
+                                }}
+                                disabled={deletingPhotoId === project.id}
+                              >
+                                {deletingPhotoId === project.id ? (
+                                  <RefreshCw className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4" />
+                                )}
+                              </Button>
+                              </div>
+                            </div>
+                        )) : (
+                           <div className="text-center py-8">
+                             <Image className="w-12 h-12 mx-auto mb-4 text-white/30" />
+                             {recentProjects.length === 0 ? (
+                               <>
+                                 <p className="text-white/60 mb-2">Je hebt nog geen foto's opgeslagen.</p>
+                                 <p className="text-white/40 text-sm">Begin met het bewerken van foto's om ze hier te zien verschijnen.</p>
+                               </>
+                             ) : (
+                               <>
+                                 <p className="text-white/60 mb-2">Geen foto's gevonden voor deze filter.</p>
+                                 <p className="text-white/40 text-sm">Probeer een andere datumfilter of voeg nieuwe foto's toe.</p>
+                               </>
+                             )}
+                           </div>
+                         )}
+                       </div>
+                     </CardContent>
+                   </Card>
+                 </motion.div>
 
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.8 }}
-                    className="space-y-6"
-                  >
-                    <Card className="glass-effect border-white/10">
-                      <CardHeader>
-                        <CardTitle className="text-lg text-white flex items-center gap-2">
-                          <Zap className="w-5 h-5 text-yellow-400" />
-                          Credits Overzicht
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-center mb-4">
-                          <div className="text-4xl font-bold text-purple-400 mb-2">
-                            {credits}
-                          </div>
-                          <p className="text-white/70 text-sm">Credits beschikbaar</p>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-white/70">Plan:</span>
-                          <span className="text-purple-400 capitalize">{userProfile?.subscription_type}</span>
-                        </div>
-                        <Link to="/subscription" className="block mt-4">
-                          <Button className="w-full button-glow">
-                            <CreditCard className="w-4 h-4 mr-2" />
-                            Meer Credits
-                          </Button>
-                        </Link>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className="glass-effect border-white/10">
-                      <CardHeader>
-                        <CardTitle className="text-lg text-white flex items-center gap-2">
-                          <Star className="w-5 h-5 text-yellow-400" />
-                          Pro Tips
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3 text-sm">
-                          <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                            <p className="text-purple-400 font-medium mb-1">💡 Optimalisatie Tip</p>
-                            <p className="text-white/70">Upload foto's in hoge resolutie voor de beste AI-resultaten.</p>
-                          </div>
-                          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                            <p className="text-blue-400 font-medium mb-1">🎯 Advertentie Tip</p>
-                            <p className="text-white/70">Gebruik contrastrijke kleuren voor betere conversie.</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                </div>
 
-                {/* Debug Section - Only show in development */}
-                {process.env.NODE_ENV === 'development' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.8 }}
-                    className="mt-8"
-                  >
-                    <Card className="glass-effect border-white/10">
-                      <CardHeader>
-                        <CardTitle className="text-lg text-white flex items-center gap-2">
-                          <Bug className="w-5 h-5 text-orange-400" />
-                          Debug Tools
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                         <div className="flex flex-wrap gap-2">
-                           <Button
-                             onClick={handleCheckAuth}
-                             variant="outline"
-                             size="sm"
-                             className="border-purple-500/20 hover:bg-purple-500/10 text-purple-400"
-                           >
-                             Check Auth
-                           </Button>
-                           <Button
-                             onClick={handleTestLogin}
-                             variant="outline"
-                             size="sm"
-                             className="border-yellow-500/20 hover:bg-yellow-500/10 text-yellow-400"
-                           >
-                             Test Login
-                           </Button>
-                           <Button
-                             onClick={handleTestFirebaseConnection}
-                             disabled={testingFirebase}
-                             variant="outline"
-                             size="sm"
-                             className="border-orange-500/20 hover:bg-orange-500/10 text-orange-400"
-                           >
-                             {testingFirebase ? 'Testing...' : 'Firebase Test'}
-                           </Button>
-                           <Button
-                             onClick={handleTestImageUpload}
-                             disabled={testingFirebase}
-                             variant="outline"
-                             size="sm"
-                             className="border-blue-500/20 hover:bg-blue-500/10 text-blue-400"
-                           >
-                             {testingFirebase ? 'Testing...' : 'Image Upload'}
-                           </Button>
-                           <Button
-                             onClick={handleTestAutoSave}
-                             disabled={testingFirebase}
-                             variant="outline"
-                             size="sm"
-                             className="border-green-500/20 hover:bg-green-500/10 text-green-400"
-                           >
-                             {testingFirebase ? 'Testing...' : 'AutoSave Test'}
-                           </Button>
-                         </div>
-                       </CardContent>
-                    </Card>
-                  </motion.div>
-                )}
               </motion.div>
             </main>
           </div>
+
+          {/* Photo Enlargement Modal */}
+          {showPhotoModal && enlargedPhoto && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="relative max-w-4xl max-h-[90vh] bg-gray-900 rounded-lg overflow-hidden"
+              >
+                {/* Close Button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute top-4 right-4 z-10 bg-black/50 hover:bg-black/70 text-white"
+                  onClick={closePhotoModal}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+
+                {/* Download Button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute top-4 left-4 z-10 bg-black/50 hover:bg-black/70 text-white"
+                  onClick={() => handleDownloadPhoto(enlargedPhoto)}
+                >
+                  <Download className="w-5 h-5 mr-2" />
+                  Download
+                </Button>
+
+                {/* Enlarged Image */}
+                <img
+                  src={enlargedPhoto.url}
+                  alt={enlargedPhoto.name}
+                  className="w-full h-full object-contain"
+                  style={{ maxHeight: '90vh' }}
+                />
+
+                {/* Photo Info */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-6">
+                  <h3 className="text-white text-xl font-semibold mb-2">{enlargedPhoto.name}</h3>
+                  <div className="flex items-center gap-4 text-white/70 text-sm">
+                    <span>{enlargedPhoto.category || enlargedPhoto.tool}</span>
+                    <span>•</span>
+                    <span>{new Date(enlargedPhoto.createdAt).toLocaleDateString('nl-NL')}</span>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
         </>
       );
     };

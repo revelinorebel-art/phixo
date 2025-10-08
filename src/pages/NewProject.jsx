@@ -40,7 +40,7 @@ import React, { useState } from 'react';
           description: 'Plaats je product in elke gewenste omgeving met AI',
           icon: Layers,
           color: 'from-teal-500 to-green-500',
-          features: ['Object in achtergrond plaatsen', 'Realistische schaduwen & licht', 'Snelle aanpassingen', 'Sla op in Mijn Foto\'s']
+          features: ['Object in achtergrond plaatsen', 'Realistische schaduwen & licht', 'Snelle aanpassingen', 'Automatische opslag']
         },
         {
           id: 'foto-generator',

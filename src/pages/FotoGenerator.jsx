@@ -105,7 +105,7 @@ const FotoGenerator = () => {
         
         // Also save using existing Firebase methods for compatibility
         try {
-          const savedImageUrl = await saveGeneratedImage(result.imageUrl, `generated-${Date.now()}.jpg`);
+          const savedImageUrl = await saveGeneratedImage(result.imageUrl, prompt);
           await saveImageGeneration({
             imageUrl: savedImageUrl,
             prompt: prompt,
@@ -269,7 +269,7 @@ const FotoGenerator = () => {
         
         // Save edited image to Firebase Storage for compatibility
         try {
-          const savedImageUrl = await saveGeneratedImage(result.imageUrl, `edited-${Date.now()}.jpg`);
+          const savedImageUrl = await saveGeneratedImage(result.imageUrl, editPrompt);
           
           // Clear redo stack wanneer nieuwe bewerking wordt gemaakt
           setRedoStack([]);

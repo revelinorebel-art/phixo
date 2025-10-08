@@ -2,6 +2,9 @@ import { storageService, uploadEditedPhoto } from './storageService';
 import { databaseService } from './databaseService';
 import { authService } from './authService';
 import { toast } from '@/components/ui/use-toast';
+import { ref, deleteObject, listAll, getDownloadURL, getMetadata } from 'firebase/storage';
+import { storage } from '../lib/firebase';
+import { withRetry, logFirestoreError } from '../utils/firestoreUtils';
 
 /**
  * AutoSaveService - Centrale service voor automatische foto opslag
@@ -25,189 +28,305 @@ class AutoSaveService {
    * @returns {Promise<Object>} Upload resultaat
    */
   async autoSavePhoto(photoData, onProgress = null) {
+    console.log('🔄 AutoSaveService: Starting autoSavePhoto...', photoData);
+    
     if (!this.isEnabled) {
       console.log('AutoSave is disabled');
       return null;
     }
 
     try {
-      console.log('🔄 Starting auto-save process...', { photoData, onProgress });
-      
+      // Check if user is authenticated
       const user = authService.getCurrentUser();
+      console.log('👤 AutoSaveService: Current user:', user ? user.uid : 'Not authenticated');
+      
       if (!user) {
-        console.warn('⚠️ No authenticated user found for auto-save');
+        console.warn('⚠️ AutoSaveService: User not authenticated, skipping auto-save');
         toast({
           title: "Authenticatie vereist",
           description: "Je moet ingelogd zijn om foto's op te slaan.",
           variant: "destructive"
         });
-        throw new Error('User must be authenticated to save photos');
-      }
-      
-      console.log('✅ User authenticated:', user.uid);
-
-      // Valideer input
-      if (!photoData.imageUrl || !photoData.tool || !photoData.prompt) {
-        throw new Error('Missing required photo data: imageUrl, tool, and prompt are required');
+        return { success: false, error: 'User not authenticated' };
       }
 
-      // Converteer foto URL naar blob
-      console.log('🔄 Converting image URL to blob...');
+      // Validate input
+      if (!photoData || !photoData.imageUrl) {
+        console.error('❌ AutoSaveService: Invalid photo data:', photoData);
+        return { success: false, error: 'Invalid photo data' };
+      }
+
+      console.log('🔄 AutoSaveService: Converting image URL to blob...');
+      // Convert image URL to blob
       const response = await fetch(photoData.imageUrl);
       if (!response.ok) {
-        throw new Error('Failed to fetch image from URL');
+        console.error('❌ AutoSaveService: Failed to fetch image:', response.status, response.statusText);
+        throw new Error(`Failed to fetch image: ${response.status}`);
       }
+      
       const blob = await response.blob();
-      console.log('✅ Blob created:', blob.size, 'bytes');
+      console.log('✅ AutoSaveService: Image converted to blob:', blob.size, 'bytes');
 
-      // Genereer metadata voor opslag
-      console.log('🔄 Generating metadata...');
+      // Generate metadata
       const metadata = {
-        category: photoData.tool,
-        prompt: photoData.prompt,
+        category: photoData.metadata?.category || 'edited',
+        prompt: photoData.prompt || '',
         aspectRatio: photoData.metadata?.aspectRatio || 'unknown',
         resolution: photoData.metadata?.resolution || 'unknown',
-        originalFileName: photoData.metadata?.originalFileName || 'generated_photo',
-        editedAt: new Date().toISOString(),
-        tool: photoData.tool,
-        ...photoData.metadata
-      };
-      console.log('✅ Metadata generated:', metadata);
-
-      // Upload naar Firebase Storage
-      console.log('🔄 Uploading to Firebase Storage...');
-      const uploadResult = await this.uploadToFirebaseStorage(blob, metadata, onProgress);
-      console.log('✅ Firebase upload completed:', uploadResult);
-
-      // Sla metadata op in database
-      console.log('🔄 Saving to database...');
-      const dbResult = await this.saveToDatabase(uploadResult, photoData, user.uid);
-      console.log('✅ Database save completed');
-
-      // Sla ook op in localStorage voor snelle toegang
-      console.log('🔄 Saving to localStorage...');
-      await this.saveToLocalStorage(uploadResult, photoData);
-      console.log('✅ localStorage save completed');
-
-      // Toon success toast
-      toast({
-        title: "Foto automatisch opgeslagen! ☁️",
-        description: `Je ${this.getToolDisplayName(photoData.tool)} foto is opgeslagen in Mijn Foto's.`,
-        duration: 3000
-      });
-
-      return {
-        success: true,
-        firebaseUrl: uploadResult.downloadURL,
-        databaseId: dbResult.id,
-        metadata: uploadResult.metadata
+        originalFileName: photoData.metadata?.originalFileName || 'unknown',
+        editedAt: photoData.metadata?.editedAt || new Date().toISOString(),
+        tool: photoData.tool || 'unknown'
       };
 
-    } catch (error) {
-      console.error('AutoSave error:', error);
-      
-      // Toon error toast alleen voor kritieke fouten
-      if (!error.message.includes('User must be authenticated')) {
-        toast({
-          title: "Automatisch opslaan mislukt",
-          description: `Kon de foto niet automatisch opslaan: ${error.message}`,
-          variant: "destructive",
-          duration: 5000
-        });
+      console.log('📋 AutoSaveService: Generated metadata:', metadata);
+
+      // Upload to Firebase Storage
+      console.log('☁️ AutoSaveService: Uploading to Firebase Storage...');
+      const uploadResult = await uploadEditedPhoto(blob, metadata, onProgress);
+      console.log('✅ AutoSaveService: Firebase upload result:', uploadResult);
+
+      if (!uploadResult || !uploadResult.downloadURL) {
+        console.error('❌ AutoSaveService: Upload failed - no download URL');
+        throw new Error('Upload failed - no download URL received');
       }
 
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Upload foto naar Firebase Storage
-   */
-  async uploadToFirebaseStorage(blob, metadata, onProgress) {
-    try {
-      const user = authService.getCurrentUser();
-      if (!user) {
-        throw new Error('User must be authenticated to upload photos');
+      // Validate uploadResult structure
+      if (!uploadResult.fileName) {
+        console.warn('⚠️ AutoSaveService: No fileName in uploadResult, using fallback');
+        console.log('🔍 AutoSaveService: Full uploadResult:', uploadResult);
       }
-      
-      // Gebruik de geïmporteerde uploadEditedPhoto functie
-      const result = await uploadEditedPhoto(blob, metadata, onProgress);
-      return result;
-    } catch (error) {
-      console.error('Firebase Storage upload error:', error);
-      throw new Error(`Failed to upload to Firebase Storage: ${error.message}`);
-    }
-  }
 
-  /**
-   * Sla foto metadata op in database
-   */
-  async saveToDatabase(uploadResult, photoData, userId) {
-    try {
+      // Save to database
+      console.log('💾 AutoSaveService: Saving to database...');
       const imageData = {
-        userId: userId,
-        prompt: photoData.prompt,
+        userId: user.uid,
+        prompt: photoData.prompt || '',
         imageUrl: uploadResult.downloadURL,
-        imagePath: uploadResult.fileName,
-        tool: photoData.tool,
-        category: photoData.tool,
-        settings: photoData.metadata || {},
-        creditsUsed: photoData.creditsUsed || 0,
+        imagePath: uploadResult.fileName || null,
+        fileName: uploadResult.fileName || null, // Add fileName as backup
+        tool: photoData.tool || 'photo-optimization',
+        category: metadata.category,
+        settings: photoData.settings || {},
+        creditsUsed: 1,
         status: 'completed',
         autoSaved: true,
         originalImage: photoData.originalImage || null
       };
 
-      return await databaseService.saveImageGeneration(imageData, userId);
+      console.log('📋 AutoSaveService: Saving image data to database:', imageData);
+      const dbResult = await withRetry(async () => {
+        return await databaseService.saveImageGeneration(imageData);
+      }, 'AutoSave database operation');
+      console.log('✅ AutoSaveService: Database save result:', dbResult);
+
+      // Save to localStorage for quick access
+      console.log('💾 AutoSaveService: Saving to localStorage...');
+      const autoSavedPhotos = JSON.parse(localStorage.getItem('autoSavedPhotos') || '[]');
+      
+      const newPhoto = {
+        id: `auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: `Bewerkte foto ${new Date().toLocaleDateString()}`,
+        url: uploadResult.downloadURL,
+        category: metadata.category,
+        createdAt: new Date().toISOString(),
+        prompt: photoData.prompt || '',
+        tool: photoData.tool || 'photo-optimization',
+        firebasePath: uploadResult.fileName,
+        autoSaved: true
+      };
+
+      autoSavedPhotos.unshift(newPhoto);
+      
+      // Keep only last 100 auto-saved photos
+      if (autoSavedPhotos.length > 100) {
+        autoSavedPhotos.splice(100);
+      }
+      
+      localStorage.setItem('autoSavedPhotos', JSON.stringify(autoSavedPhotos));
+      console.log('✅ AutoSaveService: Saved to localStorage, total photos:', autoSavedPhotos.length);
+
+      // Trigger dashboard refresh
+      this.triggerDashboardRefresh();
+
+      // Show success toast
+      console.log('🎉 AutoSaveService: Showing success toast...');
+      toast({
+        title: "Foto automatisch opgeslagen! ☁️",
+        description: "Je bewerkte foto is veilig opgeslagen.",
+        duration: 3000
+      });
+
+      console.log('✅ AutoSaveService: Auto-save completed successfully!');
+      return {
+        success: true,
+        firebaseUrl: uploadResult.downloadURL,
+        metadata: uploadResult.metadata,
+        localPhoto: newPhoto
+      };
+
     } catch (error) {
-      console.error('Database save error:', error);
-      // Database opslag is niet kritiek, dus we gooien geen error
-      return { id: null, error: error.message };
+      console.error('❌ AutoSaveService: Auto-save failed:', error);
+      
+      toast({
+        title: "Auto-save mislukt",
+        description: `Kon de foto niet automatisch opslaan: ${error.message}`,
+        variant: "destructive",
+        duration: 5000
+      });
+
+      return { success: false, error: error.message };
     }
   }
 
   /**
-   * Sla foto op in localStorage voor snelle toegang
+   * Haal alle opgeslagen foto's op uit Firebase Storage voor de huidige gebruiker
+   * @returns {Promise<Array>} Array van foto objecten
    */
-  async saveToLocalStorage(uploadResult, photoData) {
+  async getRecentPhotos(limit = 20) {
     try {
-      // Haal bestaande foto's op
-      const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
+      const user = authService.getCurrentUser();
+      if (!user) {
+        console.warn('⚠️ AutoSaveService: User not authenticated, returning empty array');
+        return [];
+      }
+
+      console.log('🔄 AutoSaveService: Fetching recent photos from database...');
       
-      // Creëer nieuwe foto entry
-      const newPhoto = {
-        id: `auto-saved-${Date.now()}`,
-        name: this.generatePhotoName(photoData),
-        url: uploadResult.downloadURL,
-        category: photoData.tool,
-        createdAt: new Date().toISOString(),
-        prompt: photoData.prompt,
-        tool: photoData.tool,
-        autoSaved: true,
-        firebasePath: uploadResult.fileName
-      };
-      
-      // Voeg toe aan begin van array (meest recente eerst)
-      const updatedPhotos = [newPhoto, ...savedPhotos];
-      
-      // Beperk tot maximaal 100 foto's in localStorage
-      const limitedPhotos = updatedPhotos.slice(0, 100);
-      
-      localStorage.setItem('myPhotos', JSON.stringify(limitedPhotos));
-      
-      // Dispatch custom event to notify other components (like MyPhotos)
-      window.dispatchEvent(new CustomEvent('localStorageUpdated', {
-        detail: { type: 'photoAdded', photo: newPhoto }
+      // Haal foto's op uit de database
+      const photos = await databaseService.getUserImages(user.uid, limit);
+      console.log('✅ AutoSaveService: Retrieved photos from database:', photos.length);
+
+      // Converteer naar dashboard formaat
+      const formattedPhotos = photos.map(photo => ({
+        id: photo.id || `photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: this.generatePhotoName({
+          tool: photo.tool,
+          prompt: photo.prompt
+        }),
+        url: photo.imageUrl,
+        originalImage: photo.originalImage || null, // Voeg originele foto URL toe
+        category: photo.category || photo.tool,
+        createdAt: photo.createdAt || new Date().toISOString(),
+        prompt: photo.prompt || '',
+        tool: photo.tool || 'unknown',
+        firebasePath: photo.imagePath,
+        autoSaved: photo.autoSaved || true,
+        displayCategory: this.getDisplayCategory(photo.tool || photo.category)
       }));
-      
-      return newPhoto;
+
+      console.log('✅ AutoSaveService: Formatted photos for dashboard:', formattedPhotos.length);
+      return formattedPhotos;
+
     } catch (error) {
-      console.error('LocalStorage save error:', error);
-      // LocalStorage opslag is niet kritiek
-      return null;
+      console.error('❌ AutoSaveService: Error fetching recent photos:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Verwijder een foto uit Firebase Storage en database
+   * @param {Object} photo - Foto object met firebasePath en id
+   * @returns {Promise<boolean>} Success status
+   */
+  async deletePhoto(photo) {
+    try {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        throw new Error('User must be authenticated to delete photos');
+      }
+
+      console.log('🗑️ AutoSaveService: Deleting photo...', photo);
+
+      // Verwijder uit Firebase Storage
+      if (photo.firebasePath) {
+        try {
+          const storageRef = ref(storage, `images/${photo.firebasePath}`);
+          await deleteObject(storageRef);
+          console.log('✅ AutoSaveService: Photo deleted from Firebase Storage');
+        } catch (storageError) {
+          console.warn('⚠️ AutoSaveService: Could not delete from Firebase Storage:', storageError.message);
+          // Continue with database deletion even if storage deletion fails
+        }
+      }
+
+      // Verwijder uit database
+      if (photo.id) {
+        try {
+          await databaseService.deleteImageGeneration(photo.id, user.uid);
+          console.log('✅ AutoSaveService: Photo deleted from database');
+        } catch (dbError) {
+          console.warn('⚠️ AutoSaveService: Could not delete from database:', dbError.message);
+        }
+      }
+
+      // Verwijder uit localStorage
+      try {
+        const autoSavedPhotos = JSON.parse(localStorage.getItem('autoSavedPhotos') || '[]');
+        const filteredPhotos = autoSavedPhotos.filter(p => p.id !== photo.id && p.url !== photo.url);
+        localStorage.setItem('autoSavedPhotos', JSON.stringify(filteredPhotos));
+        console.log('✅ AutoSaveService: Photo removed from localStorage');
+      } catch (localError) {
+        console.warn('⚠️ AutoSaveService: Could not remove from localStorage:', localError.message);
+      }
+
+      // Trigger dashboard refresh
+      this.triggerDashboardRefresh();
+
+      toast({
+        title: "Foto verwijderd! 🗑️",
+        description: "De foto is succesvol verwijderd.",
+        duration: 3000
+      });
+
+      return true;
+
+    } catch (error) {
+      console.error('❌ AutoSaveService: Error deleting photo:', error);
+      
+      toast({
+        title: "Verwijderen mislukt",
+        description: `Kon de foto niet verwijderen: ${error.message}`,
+        variant: "destructive",
+        duration: 5000
+      });
+
+      return false;
+    }
+  }
+
+  /**
+   * Trigger een refresh van het dashboard
+   */
+  triggerDashboardRefresh() {
+    // Dispatch een custom event voor dashboard refresh
+    window.dispatchEvent(new CustomEvent('photosUpdated', {
+      detail: { timestamp: Date.now() }
+    }));
+    
+    // Ook localStorage event voor backwards compatibility
+    window.dispatchEvent(new CustomEvent('localStorageUpdated', {
+      detail: { key: 'autoSavedPhotos', timestamp: Date.now() }
+    }));
+  }
+
+  /**
+   * Get display category voor dashboard
+   */
+  getDisplayCategory(category) {
+    switch (category) {
+      case 'photo-optimization':
+      case 'foto-optimalisatie':
+        return 'Bewerkt';
+      case 'photo-generator':
+      case 'foto-generator':
+      case 'ai-gegenereerd':
+        return 'AI Gegenereerd';
+      case 'mockup-creator':
+        return 'Mockup';
+      case 'retouch-tools':
+        return 'Geretoucheerd';
+      default:
+        return 'Foto';
     }
   }
 
@@ -220,9 +339,9 @@ class AutoSaveService {
     const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
     
     // Kort de prompt in als deze te lang is
-    const shortPrompt = photoData.prompt.length > 30 
+    const shortPrompt = photoData.prompt && photoData.prompt.length > 30 
       ? photoData.prompt.substring(0, 30) + '...'
-      : photoData.prompt;
+      : photoData.prompt || 'Bewerkte foto';
     
     return `${toolName} - ${shortPrompt} (${date} ${time})`;
   }
@@ -233,43 +352,14 @@ class AutoSaveService {
   getToolDisplayName(tool) {
     const toolNames = {
       'photo-optimization': 'Foto Optimalisatie',
+      'foto-optimalisatie': 'Foto Optimalisatie',
       'mockup-creator': 'Mockup Creator',
       'photo-generator': 'Foto Generator',
+      'foto-generator': 'Foto Generator',
       'retouch-tools': 'Retouch Tool'
     };
     
     return toolNames[tool] || tool;
-  }
-
-  /**
-   * Batch upload voor meerdere foto's
-   */
-  async autoSaveMultiplePhotos(photosData, onProgress = null) {
-    const results = [];
-    const total = photosData.length;
-    
-    for (let i = 0; i < photosData.length; i++) {
-      const photoData = photosData[i];
-      
-      try {
-        const result = await this.autoSavePhoto(photoData, (progress) => {
-          if (onProgress) {
-            const overallProgress = ((i / total) * 100) + ((progress / total));
-            onProgress(Math.round(overallProgress));
-          }
-        });
-        
-        results.push(result);
-      } catch (error) {
-        results.push({
-          success: false,
-          error: error.message,
-          photoData
-        });
-      }
-    }
-    
-    return results;
   }
 
   /**
@@ -285,74 +375,6 @@ class AutoSaveService {
    */
   isAutoSaveEnabled() {
     return this.isEnabled;
-  }
-
-  /**
-   * Wis oude auto-saved foto's (cleanup functie)
-   */
-  async cleanupOldPhotos(daysOld = 30) {
-    try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-      
-      // Cleanup localStorage
-      const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
-      const filteredPhotos = savedPhotos.filter(photo => {
-        if (!photo.autoSaved) return true; // Behoud handmatig opgeslagen foto's
-        
-        const photoDate = new Date(photo.createdAt);
-        return photoDate > cutoffDate;
-      });
-      
-      localStorage.setItem('myPhotos', JSON.stringify(filteredPhotos));
-      
-      const removedCount = savedPhotos.length - filteredPhotos.length;
-      if (removedCount > 0) {
-        console.log(`Cleaned up ${removedCount} old auto-saved photos from localStorage`);
-      }
-      
-      return { success: true, removedCount };
-    } catch (error) {
-      console.error('Cleanup error:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Krijg statistieken over auto-saved foto's
-   */
-  getAutoSaveStats() {
-    try {
-      const savedPhotos = JSON.parse(localStorage.getItem('myPhotos') || '[]');
-      const autoSavedPhotos = savedPhotos.filter(photo => photo.autoSaved);
-      
-      const stats = {
-        total: autoSavedPhotos.length,
-        byTool: {},
-        totalSize: 0,
-        oldestDate: null,
-        newestDate: null
-      };
-      
-      autoSavedPhotos.forEach(photo => {
-        // Count by tool
-        stats.byTool[photo.tool] = (stats.byTool[photo.tool] || 0) + 1;
-        
-        // Track dates
-        const photoDate = new Date(photo.createdAt);
-        if (!stats.oldestDate || photoDate < stats.oldestDate) {
-          stats.oldestDate = photoDate;
-        }
-        if (!stats.newestDate || photoDate > stats.newestDate) {
-          stats.newestDate = photoDate;
-        }
-      });
-      
-      return stats;
-    } catch (error) {
-      console.error('Stats error:', error);
-      return null;
-    }
   }
 }
 

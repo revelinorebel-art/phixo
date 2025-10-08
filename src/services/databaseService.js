@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { authService } from './authService';
+import { withRetry, logFirestoreError, isRetryableError } from '../utils/firestoreUtils';
 
 class DatabaseService {
   constructor() {
@@ -139,38 +140,63 @@ class DatabaseService {
 
   // Image Generation History
   async saveImageGeneration(imageData, userId = null) {
-    try {
-      const user = userId || authService.getCurrentUser()?.uid;
-      if (!user) {
-        throw new Error('User must be authenticated');
+    return await withRetry(async () => {
+      try {
+        const user = userId || authService.getCurrentUser()?.uid;
+        if (!user) {
+          throw new Error('User must be authenticated');
+        }
+
+        // Ensure imagePath is not undefined - use a fallback if needed
+        const imagePath = imageData.imagePath || imageData.fileName || null;
+        
+        console.log('🔄 DatabaseService: Saving image generation...', {
+          userId: user,
+          prompt: imageData.prompt,
+          imageUrl: imageData.imageUrl,
+          imagePath: imagePath,
+          tool: imageData.tool,
+          category: imageData.category
+        });
+
+        const generationData = {
+          userId: user,
+          prompt: imageData.prompt || '',
+          imageUrl: imageData.imageUrl,
+          imagePath: imagePath,
+          tool: imageData.tool || 'unknown',
+          category: imageData.category || 'general',
+          model: imageData.model || 'flux-schnell',
+          settings: imageData.settings || {},
+          creditsUsed: imageData.creditsUsed || 1,
+          status: imageData.status || 'completed',
+          autoSaved: imageData.autoSaved || false,
+          originalImage: imageData.originalImage || null,
+          createdAt: serverTimestamp()
+        };
+
+        const docRef = await addDoc(collection(this.db, 'imageGenerations'), generationData);
+
+        // Update user stats with retry logic
+        await withRetry(async () => {
+          await this.updateUserStats(user, {
+            totalImagesGenerated: increment(1)
+          });
+        }, 'Update user stats');
+
+        return {
+          id: docRef.id,
+          ...generationData
+        };
+      } catch (error) {
+        logFirestoreError(error, 'saveImageGeneration', { 
+          userId: userId || 'unknown',
+          imageUrl: imageData?.imageUrl,
+          tool: imageData?.tool 
+        });
+        throw new Error(`Failed to save image generation: ${error.message}`);
       }
-
-      const generationData = {
-        userId: user,
-        prompt: imageData.prompt,
-        imageUrl: imageData.imageUrl,
-        imagePath: imageData.imagePath,
-        model: imageData.model || 'flux-schnell',
-        settings: imageData.settings || {},
-        creditsUsed: imageData.creditsUsed || 1,
-        status: 'completed',
-        createdAt: serverTimestamp()
-      };
-
-      const docRef = await addDoc(collection(this.db, 'imageGenerations'), generationData);
-
-      // Update user stats
-      await this.updateUserStats(user, {
-        totalImagesGenerated: increment(1)
-      });
-
-      return {
-        id: docRef.id,
-        ...generationData
-      };
-    } catch (error) {
-      throw new Error(`Failed to save image generation: ${error.message}`);
-    }
+    }, 'Save image generation');
   }
 
   // Get user's image generation history
@@ -204,15 +230,79 @@ class DatabaseService {
     }
   }
 
-  // Delete image generation from database
-  async deleteImageGeneration(imageUrl, userId = null) {
+  // Get user images from database
+  async getUserImages(userId = null, limitCount = 20) {
     try {
       const user = userId || authService.getCurrentUser()?.uid;
       if (!user) {
         throw new Error('User must be authenticated');
       }
 
-      console.log('🗄️ Searching for image generation to delete:', { imageUrl, userId: user });
+      console.log('🔄 DatabaseService: Fetching user images...', { userId: user, limit: limitCount });
+
+      const q = query(
+        collection(this.db, 'imageGenerations'),
+        where('userId', '==', user),
+        orderBy('createdAt', 'desc'),
+        limit(limitCount)
+      );
+
+      const querySnapshot = await getDocs(q);
+      const images = [];
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        images.push({
+          id: doc.id,
+          ...data,
+          // Ensure createdAt is properly formatted
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt || new Date().toISOString()
+        });
+      });
+
+      console.log('✅ DatabaseService: Retrieved images:', images.length);
+      return images;
+    } catch (error) {
+      console.error('❌ DatabaseService: Error fetching user images:', error);
+      throw new Error(`Failed to get user images: ${error.message}`);
+    }
+  }
+
+  // Delete image generation from database
+  async deleteImageGeneration(imageId, userId = null) {
+    try {
+      const user = userId || authService.getCurrentUser()?.uid;
+      if (!user) {
+        throw new Error('User must be authenticated');
+      }
+
+      console.log('🗄️ Deleting image generation:', { imageId, userId: user });
+
+      // If imageId is provided, delete directly by document ID
+      if (imageId && typeof imageId === 'string' && !imageId.startsWith('http')) {
+        try {
+          const docRef = doc(this.db, 'imageGenerations', imageId);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists() && docSnap.data().userId === user) {
+            await deleteDoc(docRef);
+            console.log('✅ Deleted image generation by ID:', imageId);
+            return { 
+              success: true, 
+              deletedCount: 1,
+              message: 'Image generation deleted successfully'
+            };
+          } else {
+            console.warn('❌ Document not found or user mismatch for ID:', imageId);
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to delete by ID, falling back to URL search:', error.message);
+        }
+      }
+
+      // Fallback: search by URL (for backward compatibility)
+      const imageUrl = imageId; // imageId might actually be a URL
+      console.log('🔍 Searching for image generation by URL:', imageUrl);
 
       // First try to find by imageUrl
       let q = query(
@@ -234,41 +324,6 @@ class DatabaseService {
         querySnapshot = await getDocs(q);
       }
 
-      // If still not found, try partial URL matching
-      if (querySnapshot.empty) {
-        console.log('🔍 Not found by imagePath, trying partial URL matching...');
-        // Get all user's image generations and find by partial URL match
-        const allUserImages = query(
-          collection(this.db, 'imageGenerations'),
-          where('userId', '==', user)
-        );
-        const allSnapshot = await getDocs(allUserImages);
-        
-        const matchingDocs = [];
-        allSnapshot.forEach((doc) => {
-          const data = doc.data();
-          // Check if the imageUrl contains the search URL or vice versa
-          if (data.imageUrl && (data.imageUrl.includes(imageUrl) || imageUrl.includes(data.imageUrl))) {
-            matchingDocs.push(doc);
-          } else if (data.imagePath && (data.imagePath.includes(imageUrl) || imageUrl.includes(data.imagePath))) {
-            matchingDocs.push(doc);
-          }
-        });
-
-        if (matchingDocs.length > 0) {
-          console.log(`🎯 Found ${matchingDocs.length} matching documents by partial URL`);
-          // Delete matching documents
-          const deletePromises = matchingDocs.map(doc => deleteDoc(doc.ref));
-          await Promise.all(deletePromises);
-
-          return { 
-            success: true, 
-            deletedCount: matchingDocs.length,
-            message: `Deleted ${matchingDocs.length} image generation record(s) by partial URL match`
-          };
-        }
-      }
-      
       if (querySnapshot.empty) {
         console.warn('❌ No image generation found to delete for URL:', imageUrl);
         return { success: true, message: 'No matching record found' };
@@ -276,7 +331,7 @@ class DatabaseService {
 
       console.log(`✅ Found ${querySnapshot.size} matching documents to delete`);
 
-      // Delete all matching documents (there should typically be only one)
+      // Delete all matching documents
       const deletePromises = [];
       querySnapshot.forEach((doc) => {
         console.log('🗑️ Deleting document:', doc.id, doc.data());
@@ -329,15 +384,21 @@ class DatabaseService {
 
   // Update user statistics
   async updateUserStats(userId, updates) {
-    try {
-      const userRef = doc(this.db, 'users', userId);
-      await updateDoc(userRef, {
-        ...updates,
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      throw new Error(`Failed to update user stats: ${error.message}`);
-    }
+    return await withRetry(async () => {
+      try {
+        const userRef = doc(this.db, 'users', userId);
+        await updateDoc(userRef, {
+          ...updates,
+          updatedAt: serverTimestamp()
+        });
+      } catch (error) {
+        logFirestoreError(error, 'updateUserStats', { 
+          userId,
+          updates: Object.keys(updates)
+        });
+        throw new Error(`Failed to update user stats: ${error.message}`);
+      }
+    }, 'Update user statistics');
   }
 
   // Subscription Management (for future Stripe integration)
@@ -385,7 +446,7 @@ class DatabaseService {
     }
   }
 
-  // Real-time user data listener
+  // Real-time user data listener with improved error handling
   subscribeToUserData(userId, callback) {
     const user = userId || authService.getCurrentUser()?.uid;
     if (!user) {
@@ -393,17 +454,58 @@ class DatabaseService {
     }
 
     const userRef = doc(this.db, 'users', user);
+    let retryCount = 0;
+    const maxRetries = 3;
+    let unsubscribe = null;
     
-    return onSnapshot(userRef, (doc) => {
-      if (doc.exists()) {
-        callback(doc.data());
-      } else {
-        callback(null);
+    const createListener = () => {
+      console.log(`🔄 Setting up user data listener (attempt ${retryCount + 1})`);
+      
+      unsubscribe = onSnapshot(userRef, 
+        (doc) => {
+          // Reset retry count on successful connection
+          retryCount = 0;
+          
+          if (doc.exists()) {
+            callback(doc.data());
+          } else {
+            callback(null);
+          }
+        }, 
+        (error) => {
+          logFirestoreError(error, 'subscribeToUserData', { userId: user });
+          
+          // Handle retryable errors
+          if (retryCount < maxRetries && isRetryableError(error)) {
+            retryCount++;
+            console.log(`⏳ Retrying user data listener in 2 seconds (attempt ${retryCount}/${maxRetries})`);
+            
+            // Cleanup current listener
+            if (unsubscribe) {
+              unsubscribe();
+            }
+            
+            // Retry after delay
+            setTimeout(() => {
+              createListener();
+            }, 2000 * retryCount); // Exponential backoff
+          } else {
+            console.error('❌ User data listener failed permanently:', error);
+            callback(null);
+          }
+        }
+      );
+    };
+    
+    // Start the listener
+    createListener();
+    
+    // Return cleanup function
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
       }
-    }, (error) => {
-      console.error('Error listening to user data:', error);
-      callback(null);
-    });
+    };
   }
 
   // Save user preferences

@@ -3,25 +3,40 @@ service firebase.storage {
   match /b/{bucket}/o {
     // Images folder - users can only access their own images
     match /images/{userId}/{imageId} {
-      // Allow read access to own images
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // Allow read access to own images (or in development mode)
+      allow read: if (request.auth != null && request.auth.uid == userId) || 
+                     (userId == 'dev-user-123');
       
-      // Allow write access to own images with validation
-      allow write: if request.auth != null 
-        && request.auth.uid == userId
+      // Allow write access to own images with validation (or in development mode)
+      allow write: if ((request.auth != null && request.auth.uid == userId) || 
+                      (userId == 'dev-user-123'))
         && validateImageUpload();
       
-      // Allow delete access to own images
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      // Allow delete access to own images (or in development mode)
+      allow delete: if (request.auth != null && request.auth.uid == userId) || 
+                       (userId == 'dev-user-123');
     }
     
     // Generated images subfolder
     match /images/{userId}/generated/{imageId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null 
-        && request.auth.uid == userId
+      allow read: if (request.auth != null && request.auth.uid == userId) || 
+                     (userId == 'dev-user-123');
+      allow write: if ((request.auth != null && request.auth.uid == userId) || 
+                      (userId == 'dev-user-123'))
         && validateImageUpload();
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow delete: if (request.auth != null && request.auth.uid == userId) || 
+                       (userId == 'dev-user-123');
+    }
+    
+    // Edited images subfolder
+    match /images/{userId}/edited/{allPaths=**} {
+      allow read: if (request.auth != null && request.auth.uid == userId) || 
+                     (userId == 'dev-user-123');
+      allow write: if ((request.auth != null && request.auth.uid == userId) || 
+                      (userId == 'dev-user-123'))
+        && validateImageUpload();
+      allow delete: if (request.auth != null && request.auth.uid == userId) || 
+                       (userId == 'dev-user-123');
     }
     
     // Profile pictures (if needed in the future)

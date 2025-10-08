@@ -2,6 +2,11 @@
 import express from 'express';
 import cors from 'cors';
 import Replicate from 'replicate';
+import dotenv from 'dotenv';
+import fetch from 'node-fetch';
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const PORT = 3001;
@@ -726,6 +731,108 @@ app.post('/api/url-to-base64', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message || 'Failed to convert URL to base64' 
+    });
+  }
+});
+
+// Download image endpoint to avoid CORS issues
+app.get('/download-image', async (req, res) => {
+  try {
+    const { url, filename } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+    
+    console.log('🔽 Downloading image:', url);
+    
+    // Fetch the image
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    
+    // Convert response to buffer
+    const buffer = await response.buffer();
+    
+    // Get the content type
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    // Determine file extension from content type
+    let fileExtension = '.jpg';
+    if (contentType.includes('png')) fileExtension = '.png';
+    else if (contentType.includes('gif')) fileExtension = '.gif';
+    else if (contentType.includes('webp')) fileExtension = '.webp';
+    
+    // Ensure filename has correct extension
+    const finalFilename = filename || `download${fileExtension}`;
+    
+    console.log(`✅ Image downloaded successfully: ${buffer.length} bytes, type: ${contentType}`);
+    
+    // Set headers to force download
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${finalFilename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Send the buffer
+    res.send(buffer);
+    
+  } catch (error) {
+    console.error('❌ Download error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to download image' 
+    });
+  }
+});
+
+// Fetch image endpoint for handling CORS issues (especially Firebase Storage)
+app.get('/api/fetch-image', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+    
+    console.log('🔄 Fetching image via proxy:', url);
+    
+    // Fetch the image
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    
+    // Get the content type
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    // Convert response to buffer
+    const buffer = await response.buffer();
+    
+    console.log(`✅ Image fetched successfully: ${buffer.length} bytes, type: ${contentType}`);
+    
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', buffer.length);
+    
+    // Send the buffer
+    res.send(buffer);
+    
+  } catch (error) {
+    console.error('❌ Fetch image error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to fetch image' 
     });
   }
 });
