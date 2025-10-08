@@ -23,10 +23,14 @@ import { autoSaveService } from '@/services/autoSaveService';
 const FotoGenerator = () => {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const { callSeedreamApi, isLoading, generatedImage, setGeneratedImage, history, clearHistory, credits } = useSeedream();
+  const { callSeedreamApi, isLoading, generatedImage, setGeneratedImage, clearHistory, credits } = useSeedream();
   const { user } = useAuth();
   const { uploadImage, saveGeneratedImage, isUploading } = useImageStorage();
   const { saveImageGeneration, refreshHistory, history: imageHistory } = useImageHistory();
+  
+  // Recent photos state (replacing hardcoded history)
+  const [recentPhotos, setRecentPhotos] = useState([]);
+  const [loadingRecentPhotos, setLoadingRecentPhotos] = useState(false);
   
   // Gescheiden state voor genereren en bewerken
   const [activeTab, setActiveTab] = useState('generate');
@@ -47,8 +51,40 @@ const FotoGenerator = () => {
   useEffect(() => {
     if (user) {
       refreshHistory();
+      loadRecentPhotos();
     }
   }, [user, refreshHistory]);
+
+  // Load recent photos from Firebase Storage via autoSaveService
+  const loadRecentPhotos = async () => {
+    if (!user) {
+      console.log('🔍 FotoGenerator: No user authenticated, skipping photo load');
+      setRecentPhotos([]);
+      return;
+    }
+
+    try {
+      setLoadingRecentPhotos(true);
+      console.log('🔄 FotoGenerator: Loading recent photos from autoSaveService...');
+      
+      // Use the autoSaveService to get recent photos
+      const photos = await autoSaveService.getRecentPhotos(6); // Get 6 recent photos for the grid
+      console.log('✅ FotoGenerator: Loaded photos from autoSaveService:', photos.length);
+      
+      // Set the photos directly without adding test photos
+      setRecentPhotos(photos);
+    } catch (error) {
+      console.error('❌ FotoGenerator: Error loading recent photos:', error);
+      setRecentPhotos([]);
+      toast({
+        title: "Fout bij laden foto's",
+        description: "Kon recente foto's niet laden. Probeer de pagina te vernieuwen.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingRecentPhotos(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -116,6 +152,9 @@ const FotoGenerator = () => {
         } catch (storageError) {
           console.error('Error saving image to Firebase:', storageError);
         }
+        
+        // Refresh recent photos to show the new generation
+        loadRecentPhotos();
       }
     } catch (error) {
       console.error('Generation error:', error);
@@ -295,6 +334,9 @@ const FotoGenerator = () => {
             title: "Bewerking voltooid!",
             description: "Je foto is succesvol bewerkt met PHIXO AI.",
           });
+          
+          // Refresh recent photos to show the new edit
+          loadRecentPhotos();
         } catch (storageError) {
           console.error('Error saving edited image:', storageError);
           // Still show the result even if saving failed
@@ -308,6 +350,9 @@ const FotoGenerator = () => {
             title: "Bewerking voltooid!",
             description: "Je foto is succesvol bewerkt met PHIXO AI.",
           });
+          
+          // Refresh recent photos to show the new edit
+          loadRecentPhotos();
         }
       } else {
         throw new Error("PHIXO bewerking mislukt - geen resultaat ontvangen");
@@ -622,13 +667,13 @@ const FotoGenerator = () => {
                         </div>
 
                         {/* Recente Gegenereerde Foto's */}
-                        {imageHistory && imageHistory.length > 0 && (
+                        {recentPhotos && recentPhotos.length > 0 && (
                           <div>
                             <Label className="text-white/80 text-sm font-medium mb-3 block">
                               Recente Gegenereerde Foto's
                             </Label>
                             <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                              {imageHistory.slice(0, 6).map((item) => (
+                              {recentPhotos.slice(0, 6).map((item) => (
                                 <div
                                   key={item.id}
                                   className="group cursor-pointer"
@@ -637,20 +682,20 @@ const FotoGenerator = () => {
                                   <div className="relative rounded-lg overflow-hidden bg-white/5 aspect-square">
                                     <img
                                       src={item.imageUrl}
-                                      alt={item.prompt}
+                                      alt={item.metadata?.prompt || 'Generated photo'}
                                       className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                                   </div>
                                   <p className="text-white/60 text-xs mt-2 truncate">
-                                    {item.prompt}
+                                    {item.metadata?.prompt || 'Generated photo'}
                                   </p>
                                   <div className="flex items-center justify-between mt-1">
                                     <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
-                                      {item.aspectRatio}
+                                      {item.metadata?.aspectRatio || '1:1'}
                                     </span>
                                     <span className="text-xs text-white/40">
-                                      {item.type === 'generated' ? 'Gegenereerd' : 'Bewerkt'}
+                                      {item.tool === 'foto-generator' ? 'Gegenereerd' : 'Bewerkt'}
                                     </span>
                                   </div>
                                 </div>
@@ -945,13 +990,13 @@ const FotoGenerator = () => {
                         </div>
 
                         {/* Recente Gegenereerde Foto's in Edit Tab */}
-                        {history.length > 0 && (
+                        {recentPhotos.length > 0 && (
                           <div>
                             <Label className="text-white/80 text-sm font-medium mb-3 block">
                               Recente Gegenereerde Foto's
                             </Label>
                             <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                              {history.slice(0, 6).map((item) => (
+                              {recentPhotos.slice(0, 6).map((item) => (
                                 <div
                                   key={item.id}
                                   className="group cursor-pointer"
@@ -960,7 +1005,7 @@ const FotoGenerator = () => {
                                   <div className="relative rounded-lg overflow-hidden bg-white/5 aspect-square">
                                     <img
                                       src={item.imageUrl}
-                                      alt={item.prompt}
+                                      alt={item.metadata?.prompt || 'Generated photo'}
                                       className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
@@ -969,7 +1014,7 @@ const FotoGenerator = () => {
                                     </div>
                                   </div>
                                   <p className="text-white/60 text-xs mt-1 truncate">
-                                    {item.prompt}
+                                    {item.metadata?.prompt || 'Generated photo'}
                                   </p>
                                 </div>
                               ))}
