@@ -501,22 +501,6 @@ const FotoGenerator = () => {
                                   className="w-full h-auto max-h-[70vh] object-contain"
                                 />
                               </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={handleDownload}
-                                  className="flex-1 bg-green-600 hover:bg-green-700 h-12"
-                                >
-                                  <Download className="w-4 h-4 mr-2" />
-                                  Download
-                                </Button>
-                                <Button
-                                  onClick={() => transferToEdit(generateImage)}
-                                  className="flex-1 bg-blue-600 hover:bg-blue-700 h-12"
-                                >
-                                  <Edit3 className="w-4 h-4 mr-2" />
-                                  Bewerken
-                                </Button>
-                              </div>
                             </div>
                           ) : (
                             <div className="w-full min-h-[50vh] rounded-lg bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center">
@@ -598,6 +582,26 @@ const FotoGenerator = () => {
                             </>
                           )}
                         </Button>
+
+                        {/* Action buttons for generated image */}
+                        {generateImage && (
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={handleDownload}
+                              className="flex-1 bg-green-600 hover:bg-green-700 h-12"
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download
+                            </Button>
+                            <Button
+                              onClick={() => transferToEdit(generateImage)}
+                              className="flex-1 bg-blue-600 hover:bg-blue-700 h-12"
+                            >
+                              <Edit3 className="w-4 h-4 mr-2" />
+                              Bewerken
+                            </Button>
+                          </div>
+                        )}
 
                         {/* Prompt Suggestions */}
                         <div>
@@ -786,35 +790,6 @@ const FotoGenerator = () => {
                                   />
                                 </div>
                               )}
-                              <div className="flex gap-2">
-                                 <Button
-                                   onClick={handleDownloadEdited}
-                                   className="flex-1 bg-green-600 hover:bg-green-700 h-12"
-                                 >
-                                   <Download className="w-4 h-4 mr-2" />
-                                   Download
-                                 </Button>
-                                 {historyIndex > 0 && (
-                                   <Button
-                                     onClick={handleUndoEdit}
-                                     variant="outline"
-                                     className="h-12 px-4 border-white/20 text-white hover:bg-white/10"
-                                     title="Ongedaan maken"
-                                   >
-                                     <Undo2 className="w-4 h-4" />
-                                   </Button>
-                                 )}
-                                 {redoStack.length > 0 && (
-                                   <Button
-                                     onClick={handleRedoEdit}
-                                     variant="outline"
-                                     className="h-12 px-4 border-white/20 text-white hover:bg-white/10"
-                                     title="Opnieuw uitvoeren"
-                                   >
-                                     <Redo2 className="w-4 h-4" />
-                                   </Button>
-                                 )}
-                               </div>
                             </div>
                           ) : (
                             <div className="w-full min-h-[50vh] rounded-lg bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center">
@@ -890,6 +865,39 @@ const FotoGenerator = () => {
                             </>
                           )}
                         </Button>
+
+                        {/* Action buttons for edited image */}
+                        {editedImage && (
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={handleDownloadEdited}
+                              className="flex-1 bg-green-600 hover:bg-green-700 h-12"
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download
+                            </Button>
+                            {historyIndex > 0 && (
+                              <Button
+                                onClick={handleUndoEdit}
+                                variant="outline"
+                                className="h-12 px-4 border-white/20 text-white hover:bg-white/10"
+                                title="Ongedaan maken"
+                              >
+                                <Undo2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {redoStack.length > 0 && (
+                              <Button
+                                onClick={handleRedoEdit}
+                                variant="outline"
+                                className="h-12 px-4 border-white/20 text-white hover:bg-white/10"
+                                title="Opnieuw uitvoeren"
+                              >
+                                <Redo2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
 
                         {/* Quick Edit Options */}
                         <div>
