@@ -1081,138 +1081,137 @@ const FotoGenerator = () => {
   );
 };
 
-export default FotoGenerator;
-
-
-// Nieuwe undo/redo functies
-const handleUndoAdvanced = () => {
-  if (historyIndex > 0) {
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    setEditedImage(editHistory[newIndex]);
-    
-    // Voeg huidige staat toe aan redo stack
-    const currentImage = editHistory[historyIndex];
-    setRedoStack(prev => [currentImage, ...prev]);
-    
-    // Als we teruggaan naar de originele foto, verberg de voor/na slider
-    if (newIndex === 0) {
-      setShowBeforeAfter(false);
-    }
-    
-    toast({
-      title: "Ongedaan gemaakt",
-      description: `Teruggegaan naar versie ${newIndex + 1}`,
-    });
-  }
-};
-
-const handleRedoAdvanced = () => {
-  if (redoStack.length > 0) {
-    const [nextImage, ...remainingRedo] = redoStack;
-    const newIndex = historyIndex + 1;
-    
-    setHistoryIndex(newIndex);
-    setEditedImage(nextImage);
-    setRedoStack(remainingRedo);
-    setShowBeforeAfter(true);
-    
-    toast({
-      title: "Opnieuw uitgevoerd",
-      description: `Vooruit gegaan naar versie ${newIndex + 1}`,
-    });
-  }
-};
-
-// Update de bestaande handleEdit functie om undo/redo state te beheren
-const handleEditAdvanced = async () => {
-  if (!editPrompt.trim()) {
-    toast({
-      title: "Bewerkingsprompt vereist",
-      description: "Voer een beschrijving in voor je bewerking.",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  if (!originalImageForEdit) {
-    toast({
-      title: "Geen afbeelding geselecteerd",
-      description: "Selecteer eerst een afbeelding om te bewerken.",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  setIsEditing(true);
-  
-  try {
-    // Gebruik PHIXO API voor foto bewerking met originele foto als input
-    const result = await callSeedreamApi(
-      editPrompt, 
-      '1:1', 
-      'foto-bewerking', 
-      originalImageForEdit, // Gebruik originele foto als input
-      false, // skipEnhancement
-      1 // creditCost
-    );
-    
-    if (result && result.imageUrl) {
-      // Clear redo stack wanneer nieuwe bewerking wordt gemaakt
-      setRedoStack([]);
+  // Nieuwe undo/redo functies
+  const handleUndoAdvanced = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setEditedImage(editHistory[newIndex]);
       
-      // Update edit history met het directe resultaat
-      const newHistory = [...editHistory, result.imageUrl];
-      setEditHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-      setEditedImage(result.imageUrl);
+      // Voeg huidige staat toe aan redo stack
+      const currentImage = editHistory[historyIndex];
+      setRedoStack(prev => [currentImage, ...prev]);
+      
+      // Als we teruggaan naar de originele foto, verberg de voor/na slider
+      if (newIndex === 0) {
+        setShowBeforeAfter(false);
+      }
+      
+      toast({
+        title: "Ongedaan gemaakt",
+        description: `Teruggegaan naar versie ${newIndex + 1}`,
+      });
+    }
+  };
+
+  const handleRedoAdvanced = () => {
+    if (redoStack.length > 0) {
+      const [nextImage, ...remainingRedo] = redoStack;
+      const newIndex = historyIndex + 1;
+      
+      setHistoryIndex(newIndex);
+      setEditedImage(nextImage);
+      setRedoStack(remainingRedo);
       setShowBeforeAfter(true);
       
       toast({
-        title: "Bewerking voltooid!",
-        description: "Je foto is succesvol bewerkt met PHIXO AI.",
+        title: "Opnieuw uitgevoerd",
+        description: `Vooruit gegaan naar versie ${newIndex + 1}`,
       });
-    } else {
-      throw new Error("PHIXO bewerking mislukt - geen resultaat ontvangen");
     }
-  } catch (error) {
-    console.error('Edit error:', error);
-    toast({
-      title: "Bewerkingsfout",
-      description: "Er is een fout opgetreden bij het bewerken van je foto.",
-      variant: "destructive",
-    });
-  } finally {
-    setIsEditing(false);
-  }
-};
+  };
 
-// Update transferToEdit functie om undo/redo state te resetten
-const transferToEditAdvanced = (imageUrl) => {
-  setOriginalImageForEdit(imageUrl);
-  setEditedImage(imageUrl);
-  setEditHistory([imageUrl]);
-  setHistoryIndex(0);
-  setRedoStack([]);
-  setShowBeforeAfter(false);
-  setActiveTab('edit');
-};
+  // Update de bestaande handleEdit functie om undo/redo state te beheren
+  const handleEditAdvanced = async () => {
+    if (!editPrompt.trim()) {
+      toast({
+        title: "Bewerkingsprompt vereist",
+        description: "Voer een beschrijving in voor je bewerking.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-// Update handleImageUpload functie om undo/redo state te resetten
-const handleImageUploadAdvanced = (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const imageUrl = e.target.result;
-      setUploadedImage(imageUrl);
-      setOriginalImageForEdit(imageUrl);
-      setEditedImage(imageUrl);
-      setEditHistory([imageUrl]);
-      setHistoryIndex(0);
-      setRedoStack([]);
-      setShowBeforeAfter(false);
-    };
-    reader.readAsDataURL(file);
-  }
-};
+    if (!originalImageForEdit) {
+      toast({
+        title: "Geen afbeelding geselecteerd",
+        description: "Selecteer eerst een afbeelding om te bewerken.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsEditing(true);
+    
+    try {
+      // Gebruik PHIXO API voor foto bewerking met originele foto als input
+      const result = await callSeedreamApi(
+        editPrompt, 
+        '1:1', 
+        'foto-bewerking', 
+        originalImageForEdit, // Gebruik originele foto als input
+        false, // skipEnhancement
+        1 // creditCost
+      );
+      
+      if (result && result.imageUrl) {
+        // Clear redo stack wanneer nieuwe bewerking wordt gemaakt
+        setRedoStack([]);
+        
+        // Update edit history met het directe resultaat
+        const newHistory = [...editHistory, result.imageUrl];
+        setEditHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+        setEditedImage(result.imageUrl);
+        setShowBeforeAfter(true);
+        
+        toast({
+          title: "Bewerking voltooid!",
+          description: "Je foto is succesvol bewerkt met PHIXO AI.",
+        });
+      } else {
+        throw new Error("PHIXO bewerking mislukt - geen resultaat ontvangen");
+      }
+    } catch (error) {
+      console.error('Edit error:', error);
+      toast({
+        title: "Bewerkingsfout",
+        description: "Er is een fout opgetreden bij het bewerken van je foto.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  // Update transferToEdit functie om undo/redo state te resetten
+  const transferToEditAdvanced = (imageUrl) => {
+    setOriginalImageForEdit(imageUrl);
+    setEditedImage(imageUrl);
+    setEditHistory([imageUrl]);
+    setHistoryIndex(0);
+    setRedoStack([]);
+    setShowBeforeAfter(false);
+    setActiveTab('edit');
+  };
+
+  // Update handleImageUpload functie om undo/redo state te resetten
+  const handleImageUploadAdvanced = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const imageUrl = e.target.result;
+        setUploadedImage(imageUrl);
+        setOriginalImageForEdit(imageUrl);
+        setEditedImage(imageUrl);
+        setEditHistory([imageUrl]);
+        setHistoryIndex(0);
+        setRedoStack([]);
+        setShowBeforeAfter(false);
+      };
+      reader.readAsDataURL(file);
+    }
+   };
+
+export default FotoGenerator;
