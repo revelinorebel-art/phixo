@@ -335,6 +335,24 @@ const Dashboard = () => {
             <title>Dashboard - phixo</title>
             <meta name="description" content="Beheer uw foto-optimalisatie projecten, bekijk uw credits en maak nieuwe advertenties met AI-technologie op uw phixo dashboard." />
           </Helmet>
+          
+          <style>
+            {`
+              .recent-projects-scroll::-webkit-scrollbar {
+                width: 8px;
+              }
+              .recent-projects-scroll::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              .recent-projects-scroll::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+              }
+              .recent-projects-scroll::-webkit-scrollbar-thumb:hover {
+                background: rgba(255, 255, 255, 0.3);
+              }
+            `}
+          </style>
 
           <div className="flex min-h-screen">
             <Sidebar />
@@ -495,7 +513,19 @@ const Dashboard = () => {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
+                      <div 
+                        className="space-y-4 max-h-[640px] overflow-y-auto recent-projects-scroll"
+                        style={{
+                          scrollbarWidth: 'thin',
+                          scrollbarColor: 'rgba(255, 255, 255, 0.2) transparent',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.scrollbarColor = 'rgba(255, 255, 255, 0.3) transparent';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.scrollbarColor = 'rgba(255, 255, 255, 0.2) transparent';
+                        }}
+                      >
                         {loadingPhotos ? (
                           <div className="text-center py-8">
                             <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-white/50" />
