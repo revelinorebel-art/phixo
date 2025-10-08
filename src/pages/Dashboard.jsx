@@ -63,30 +63,9 @@ const Dashboard = () => {
       const photos = await autoSaveService.getRecentPhotos(12); // Get more photos for better overview
       console.log('✅ Dashboard: Loaded photos from autoSaveService:', photos.length);
       
-      // If no photos from database, add a test photo for development
-      if (photos.length === 0) {
-        console.log('🧪 Dashboard: No photos found, adding test photo for development');
-        const testPhoto = {
-          id: 'test_photo_123',
-          name: 'Test Foto voor Bewerking',
-          url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop',
-          originalImage: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop',
-          editedImage: null,
-          category: 'test',
-          createdAt: new Date().toISOString(),
-          prompt: 'Test foto voor het testen van de edit functionaliteit',
-          tool: 'test',
-          firebasePath: null,
-          autoSaved: false,
-          displayCategory: 'Test Foto'
-        };
-        
-        setRecentProjects([testPhoto]);
-        setFilteredProjects([testPhoto]);
-      } else {
-        setRecentProjects(photos);
-        setFilteredProjects(photos); // Initially show all photos
-      }
+      // Set the photos directly without adding test photos
+      setRecentProjects(photos);
+      setFilteredProjects(photos); // Initially show all photos
     } catch (error) {
       console.error('❌ Dashboard: Error loading recent projects:', error);
       setRecentProjects([]);

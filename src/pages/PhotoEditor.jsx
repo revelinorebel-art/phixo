@@ -139,17 +139,14 @@ const PhotoEditor = () => {
         console.log('✅ Found photo in localStorage:', parsedPhoto);
         setPhoto(parsedPhoto);
       } else {
-        console.log('⚠️ No photo found, using test photo');
-        const testPhoto = {
-          id: photoId,
-          name: 'Test Foto voor Bewerking',
-          originalImage: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop',
-          editedImage: null,
-          createdAt: new Date().toISOString(),
-          url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop'
-        };
-        console.log('🧪 Setting test photo:', testPhoto);
-        setPhoto(testPhoto);
+        console.log('⚠️ No photo found, redirecting to dashboard');
+        toast({
+          title: "Foto niet gevonden",
+          description: "De foto kon niet worden geladen. Je wordt doorgestuurd naar het dashboard.",
+          variant: "destructive"
+        });
+        navigate('/dashboard');
+        return;
       }
       
       // Load saved prompt
